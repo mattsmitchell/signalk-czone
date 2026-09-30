@@ -15,7 +15,9 @@
   "signalk": {
     "displayName": "CZone",
     "appIcon": "./img/czone-circuits.png",
-    "recommends": ["@signalk/signalk-to-influxdb2"],
+    "recommends": [
+      "@signalk/signalk-to-influxdb2"
+    ],
     "screenshots": [
       "./img/config.png",
       "./img/diagnostics.png",
@@ -34,5 +36,8 @@
     "img/",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "scripts": {
+    "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js"
+  }
 }
