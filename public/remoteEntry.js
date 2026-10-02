@@ -170,7 +170,16 @@ var signalk_czone = (function () {
       React.createElement('h4', null, 'CZone Circuits Configuration'),
       React.createElement('p', null, 'Configuration is loaded locally at Signal K startup. Reading from the CZone network is an explicit maintenance action and is never performed automatically at startup.'),
 
-      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #c55', borderRadius: 6 } },
+        React.createElement('strong', null, 'CZone transmit control'),
+        React.createElement('div', { style: { marginTop: 9 } },
+          React.createElement('label', null,
+            React.createElement('input', { type: 'checkbox', checked: configuration.allowCzoneWrite === true, disabled: busy, onChange: function (e) { setSending(e.target.checked) } }),
+            ' Enable CZone read/write control'
+          ),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Allows this plugin to send commands to CZone devices. This can change circuit states, modes, and configuration. Enable only if you understand the risks.')
+        )
+      ),      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
         React.createElement('strong', null, 'Configuration source'),
         React.createElement('div', { style: { marginTop: 9 } },
           React.createElement('label', { style: { display: 'block', marginBottom: 8 } },
@@ -204,16 +213,6 @@ var signalk_czone = (function () {
         )
       ),
 
-      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #c55', borderRadius: 6 } },
-        React.createElement('strong', null, 'CZone transmit control'),
-        React.createElement('div', { style: { marginTop: 9 } },
-          React.createElement('label', null,
-            React.createElement('input', { type: 'checkbox', checked: configuration.allowCzoneWrite === true, disabled: busy, onChange: function (e) { setSending(e.target.checked) } }),
-            ' Enable CZone read/write control'
-          ),
-        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Allows this plugin to send commands to CZone devices. This can change circuit states, modes, and configuration. Enable only if you understand the risks.')
-        )
-      ),
       React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
         React.createElement('strong', null, 'CZone network configuration'),
         React.createElement('p', { style: { margin: '7px 0', fontSize: 12 } }, 'Read the complete configuration from the CZone network and save it locally as a .czone.net file. This does not automatically change the active configuration.'),
