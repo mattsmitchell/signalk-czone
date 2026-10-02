@@ -7,10 +7,16 @@ const {
   parseRawLine,
   createFastPacketReassembler,
   decodeCzoneHeader,
-  CIRCUIT_STATUS_PGN
+  CIRCUIT_STATUS_PGN,
+  CZONE_CONFIG_CLAIM_PGN,
+  CZONE_DATABLOCK_ACK_PGN,
+  CZONE_DATABLOCK_PGN,
+  emitPgn
 } = require('./lib/nmea2000')
 const circuitState = require('./lib/circuit-state')
 const signalk = require('./lib/signalk')
+const czone = require('./lib/czone')
+const zcf = require('./lib/zcf')
 
 const CURRENT_PGN_DC = 130822
 const CURRENT_PGN_AC = 130817
@@ -24,6 +30,9 @@ const RECORD_COUNT = 8
 const RECORD_SIZE = 3
 const CZONE_PAYLOAD_SIZE = 28
 const MAX_UPLOAD_BYTES = 1024 * 1024
+const CZONE_CONFIG_BLOCK_HEADER = 23
+const CZONE_CONFIG_BLOCK_SIZE = 200
+const CZONE_CONFIG_READ_TIMEOUT_MS = 45000
 const STATUS_PGN = CIRCUIT_STATUS_PGN
 
 function hex2 (value) {
@@ -193,6 +202,10 @@ module.exports = function (app) {
   const circuitStatus = new Map()
   const runtimeState = new Map()
   const publishedCircuitValues = new Map()
+  let configTransfer = null
+  let configTransferTimer = null
+  let configFastPacket = null
+  let lastNetworkConfig = null
 
   const stats = {
     rawFrames: 0,
@@ -251,6 +264,193 @@ module.exports = function (app) {
         capabilities: circuit.capabilities
       })
     }
+  }
+
+  function emitNmea ({ pgn, data, description }) {
+    if (config.allowCzoneWrite !== true) {
+      throw new Error('CZone write control is disabled; enable "Enable CZone read/write control" in plugin configuration first')
+    }
+    const line = emitPgn(app, { src: 0, pgn, data })
+    log(`NMEA 2000 OUT: PGN ${pgn}${description ? ` ${description}` : ''} ${czone.hex(data)}`)
+    return line
+  }
+
+  function clearConfigTransfer () {
+    if (configTransferTimer) clearTimeout(configTransferTimer)
+    configTransferTimer = null
+    configTransfer = null
+  }
+
+  function failConfigTransfer (message) {
+    if (configTransfer) {
+      configTransfer.status = 'failed'
+      configTransfer.finishedAt = new Date().toISOString()
+      configTransfer.message = message
+      lastNetworkConfig = configTransfer
+    }
+    if (configTransferTimer) clearTimeout(configTransferTimer)
+    configTransferTimer = null
+    configFastPacket = null
+    if (typeof message === 'string') stats.lastError = message
+  }
+
+  function finishConfigTransfer (buffer, target, source) {
+    const state = configTransfer
+    if (!state) return
+    try {
+      const parsed = zcf.parse(buffer)
+      const vesselName = parsed.vesselName || 'CZone Network'
+      state.status = 'complete'
+      state.finishedAt = new Date().toISOString()
+      state.bytes = buffer.length
+      state.vesselName = vesselName
+      state.circuits = parsed.circuits.length
+      state.modes = parsed.modes.length
+      state.target = target
+      state.source = source
+      state.buffer = buffer
+      state.message = `Received CZone network configuration (${buffer.length} bytes, ${parsed.circuits.length} circuits, ${parsed.modes.length} modes)`
+      lastNetworkConfig = state
+      if (configTransferTimer) clearTimeout(configTransferTimer)
+      configTransferTimer = null
+      configTransfer = null
+      log(`CZone network configuration read complete: ${state.message}`)
+    } catch (error) {
+      failConfigTransfer(`CZone network configuration could not be parsed: ${error.message}`)
+    }
+  }
+
+  function handleConfigDataBlock (packet) {
+    if (!configTransfer || configTransfer.status !== 'reading' || !packet || !Buffer.isBuffer(packet.payload)) return
+    const payload = packet.payload
+    if (payload.length < CZONE_CONFIG_BLOCK_HEADER || payload[0] !== 0x27 || payload[1] !== 0x99) return
+
+    const blockIndex = payload.readUInt16LE(2)
+    const target = payload[4]
+    const chunk = payload.subarray(CZONE_CONFIG_BLOCK_HEADER)
+    if (chunk.length > CZONE_CONFIG_BLOCK_SIZE) {
+      failConfigTransfer(`CZone DataBlock ${blockIndex} contains ${chunk.length} bytes; maximum is ${CZONE_CONFIG_BLOCK_SIZE}`)
+      return
+    }
+
+    if (configTransfer.target == null) configTransfer.target = target
+    if (configTransfer.target !== target) return
+    configTransfer.source = packet.source
+    configTransfer.lastPacketAt = new Date().toISOString()
+
+    if (chunk.length === 0) {
+      const maxDataBlock = Math.max(-1, ...Array.from(configTransfer.blocks.keys()))
+      for (let i = 0; i <= maxDataBlock; i++) {
+        if (!configTransfer.blocks.has(i)) {
+          failConfigTransfer(`Missing CZone configuration DataBlock ${i} before terminator ${blockIndex}`)
+          return
+        }
+      }
+      const parts = []
+      for (let i = 0; i <= maxDataBlock; i++) parts.push(configTransfer.blocks.get(i))
+      const buffer = Buffer.concat(parts)
+      emitNmea({
+        pgn: CZONE_DATABLOCK_ACK_PGN,
+        data: czone.configDataBlockAck(target, blockIndex, 1),
+        description: `CZone CONFIG ACK final block=${blockIndex}`
+      })
+      return finishConfigTransfer(buffer, target, packet.source)
+    }
+
+    if (!configTransfer.blocks.has(blockIndex)) {
+      configTransfer.blocks.set(blockIndex, Buffer.from(chunk))
+    }
+
+    emitNmea({
+      pgn: CZONE_DATABLOCK_ACK_PGN,
+      data: czone.configDataBlockAck(target, blockIndex, 0),
+      description: `CZone CONFIG ACK block=${blockIndex}`
+    })
+
+    configTransfer.receivedBytes = Array.from(configTransfer.blocks.values()).reduce((sum, part) => sum + part.length, 0)
+    configTransfer.blockCount = configTransfer.blocks.size
+  }
+
+  function handleConfigFastPacket (frame) {
+    if (!configTransfer || configTransfer.status !== 'reading') return
+    if (!frame || frame.pgn !== CZONE_DATABLOCK_PGN || !frame.data || frame.data.length < 2) return
+
+    const control = frame.data[0]
+    const sequence = control >>> 5
+    const frameNo = control & 0x1f
+    const key = `${frame.source}:${sequence}`
+
+    if (frameNo === 0) {
+      const size = frame.data[1]
+      if (size < CZONE_CONFIG_BLOCK_HEADER || size > 223) return
+      configFastPacket = {
+        key,
+        source: frame.source,
+        sequence,
+        size,
+        nextFrame: 1,
+        payload: Buffer.from(frame.data.subarray(2)),
+        timestamp: frame.timestamp
+      }
+    } else {
+      if (!configFastPacket || configFastPacket.key !== key || frameNo !== configFastPacket.nextFrame) {
+        configFastPacket = null
+        return
+      }
+      configFastPacket.payload = Buffer.concat([configFastPacket.payload, frame.data.subarray(1)])
+      configFastPacket.nextFrame = (configFastPacket.nextFrame + 1) & 0x1f
+    }
+
+    if (!configFastPacket || configFastPacket.payload.length < configFastPacket.size) return
+
+    const packet = {
+      pgn: CZONE_DATABLOCK_PGN,
+      source: configFastPacket.source,
+      timestamp: configFastPacket.timestamp,
+      payload: configFastPacket.payload.subarray(0, configFastPacket.size)
+    }
+    configFastPacket = null
+    handleConfigDataBlock(packet)
+  }
+
+  function readConfigurationFromNetwork () {
+    if (config.allowCzoneWrite !== true) {
+      throw new Error('CZone write control is disabled; enable "Enable CZone read/write control" before reading configuration from the network')
+    }
+    if (configTransfer && configTransfer.status === 'reading') {
+      throw new Error('A CZone network configuration read is already in progress')
+    }
+
+    clearConfigTransfer()
+    configFastPacket = null
+    const startedAt = new Date().toISOString()
+    configTransfer = {
+      status: 'reading',
+      startedAt,
+      blocks: new Map(),
+      receivedBytes: 0,
+      blockCount: 0,
+      target: null,
+      source: null
+    }
+    lastNetworkConfig = configTransfer
+    configTransferTimer = setTimeout(
+      () => failConfigTransfer(`Timed out after ${CZONE_CONFIG_READ_TIMEOUT_MS / 1000}s waiting for the CZone configuration transfer`),
+      CZONE_CONFIG_READ_TIMEOUT_MS
+    )
+
+    try {
+      emitNmea({
+        pgn: CZONE_CONFIG_CLAIM_PGN,
+        data: czone.configReadRequest(),
+        description: 'CZone READ CONFIGURATION DATA'
+      })
+    } catch (error) {
+      failConfigTransfer(error.message)
+      throw error
+    }
+
+    return configTransfer
   }
 
   function publishCircuitDelta (circuit, pathName, value, source) {
@@ -540,6 +740,31 @@ module.exports = function (app) {
         }
       })
 
+      router.get('/configuration/network/status', (_req, res) => {
+        const read = lastNetworkConfig
+          ? { ...lastNetworkConfig, blocks: undefined, buffer: undefined }
+          : null
+        res.json({
+          writeEnabled: config.allowCzoneWrite === true,
+          read
+        })
+      })
+
+      router.post('/configuration/network/read', (_req, res) => {
+        try {
+          const state = readConfigurationFromNetwork()
+          res.status(202).json({
+            ok: true,
+            status: 'reading',
+            startedAt: state.startedAt,
+            message: 'CZone configuration read started. The plugin will ACK received configuration blocks.'
+          })
+        } catch (error) {
+          stats.lastError = error.message
+          res.status(400).json({ ok: false, error: error.message })
+        }
+      })
+
       router.post('/zcf/upload', async (req, res) => {
         try {
           const body = await readRequestBody(req)
@@ -589,6 +814,10 @@ module.exports = function (app) {
             decodeCircuitStatus(frame)
             return
           }
+          if (configTransfer && frame.pgn === CZONE_DATABLOCK_PGN) {
+            handleConfigFastPacket(frame)
+            return
+          }
           if (frame.pgn !== CURRENT_PGN_DC && frame.pgn !== CURRENT_PGN_AC) return
           reassembler.accept(frame)
         }
@@ -608,6 +837,8 @@ module.exports = function (app) {
       rawListener = null
       if (reassembler) reassembler.clear()
       reassembler = null
+      clearConfigTransfer()
+      configFastPacket = null
       running = false
       startedAt = null
       circuitStatus.clear()
