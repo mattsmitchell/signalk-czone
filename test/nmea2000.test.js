@@ -4,7 +4,7 @@ const assert = require('assert')
 const nmea2000 = require('../lib/nmea2000')
 
 assert.strictEqual(nmea2000.getPgnFromCanId(0x18ff042a), 65284)
-assert.strictEqual(nmea2000.getPgnFromCanId(0x18ff4617), 130822)
+assert.strictEqual(nmea2000.getPgnFromCanId(0x18ff0617), 130822)
 
 const frame = nmea2000.parseRawLine(
   '2026-10-02T08:00:00.000Z R 18ff042a 27 99 0a 00 01 00 00 00'
