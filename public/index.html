@@ -462,14 +462,6 @@
     }
   }
 
-  async function refreshUntilCircuits() {
-    for (let attempt = 1; attempt <= 10; attempt++) {
-      if (await refreshOnce('startup-' + attempt) && circuits.length) return true;
-      await new Promise(resolve => setTimeout(resolve, Math.min(5000, 500 * attempt)));
-    }
-    console.warn('[CZone UI] Startup circuit discovery exhausted retries', { circuits: circuits.length });
-    return false;
-  }
   async function refreshVesselName() {
     try {
       const r = await fetch('/signalk/v1/api/vessels/self/name', { cache:'no-store', credentials:'include' });
@@ -652,12 +644,12 @@
   }
 
   refreshVesselName();
-  refreshUntilCircuits().then(() => {
+  refreshOnce('initial-load').then(() => {
     if (status.sendingEnabled === true && circuits.length) {
       connectSocket();
       sendSubscriptions();
     } else if (status.sendingEnabled === true) {
-      updateSocketIndicator('CZone circuits not loaded · retrying via REST', false);
+      updateSocketIndicator('CZone circuits not loaded', false);
     } else {
       updateSocketIndicator('CZone control disabled · no control WebSocket', false);
       render();
