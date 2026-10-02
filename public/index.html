@@ -444,18 +444,31 @@
   async function refreshOnce(reason = 'manual') {
     try {
       const r = await fetch(`${API}/circuits`, { cache:'no-store', credentials:'include' });
-      if (!r.ok) throw new Error('Signal K plugin unavailable');
+      if (!r.ok) throw new Error('Signal K plugin unavailable (HTTP ' + r.status + ')');
       const data = await r.json();
+      const incoming = Array.isArray(data.circuits) ? data.circuits : [];
+      console.debug('[CZone UI] REST refresh', reason, { circuits: incoming.length, modes: Array.isArray(data.modes) ? data.modes.length : 0, sendingEnabled: data.sendingEnabled === true, nmeaReady: data.nmeaReady === true });
       mergeRest(data);
+      if (incoming.length === 0) throw new Error('CZone plugin returned an empty circuit list');
       document.querySelector('#connection').classList.add('ok');
       document.querySelector('#connection').innerHTML = '<i></i><span>Connected · live circuit data</span>';
       render();
       return true;
     } catch (e) {
+      console.warn('[CZone UI] REST refresh failed', reason, e);
       document.querySelector('#connection').classList.remove('ok');
       document.querySelector('#connection').innerHTML = '<i></i><span>Waiting for Signal K…</span>';
       return false;
     }
+  }
+
+  async function refreshUntilCircuits() {
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      if (await refreshOnce('startup-' + attempt) && circuits.length) return true;
+      await new Promise(resolve => setTimeout(resolve, Math.min(5000, 500 * attempt)));
+    }
+    console.warn('[CZone UI] Startup circuit discovery exhausted retries', { circuits: circuits.length });
+    return false;
   }
   async function refreshVesselName() {
     try {
@@ -639,10 +652,12 @@
   }
 
   refreshVesselName();
-  refreshOnce('initial-load').then(() => {
-    if (status.sendingEnabled === true) {
+  refreshUntilCircuits().then(() => {
+    if (status.sendingEnabled === true && circuits.length) {
       connectSocket();
       sendSubscriptions();
+    } else if (status.sendingEnabled === true) {
+      updateSocketIndicator('CZone circuits not loaded · retrying via REST', false);
     } else {
       updateSocketIndicator('CZone control disabled · no control WebSocket', false);
       render();
