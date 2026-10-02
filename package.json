@@ -39,5 +39,8 @@
   ],
   "scripts": {
     "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js"
+  },
+  "dependencies": {
+    "signalk-czone-zcf": "github:mattsmitchell/signalk-czone-zcf#main"
   }
 }
