@@ -15,7 +15,7 @@
   "license": "MIT",
   "signalk": {
     "displayName": "CZone",
-    "appIcon": "./img/czone-circuits.png",
+    "appIcon": "./icon.png",
     "recommends": [
       "@signalk/signalk-to-influxdb2"
     ],
