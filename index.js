@@ -510,6 +510,12 @@ module.exports = function (app) {
           description: 'Path to the active CZone configuration file. Normally populated automatically after upload.',
           default: ''
         },
+        allowCzoneWrite: {
+          type: 'boolean',
+          title: 'Enable CZone read/write control',
+          description: 'Allows this plugin to send commands to CZone devices. This can change circuit states, modes, and configuration. Enable only if you understand the risks.',
+          default: false
+        },
         logUnmapped: {
           type: 'boolean',
           title: 'Log unmapped circuits',
