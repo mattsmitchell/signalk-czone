@@ -212,7 +212,17 @@ var signalk_czone = (function () {
       save({
         zcfPath: installedPath || configuration.zcfPath || '',
         logUnmapped: configuration.logUnmapped === true,
-        debugRaw: configuration.debugRaw === true
+        debugRaw: configuration.debugRaw === true,
+        allowCzoneWrite: configuration.allowCzoneWrite === true
+      })
+    }
+
+    function setCzoneWrite (value) {
+      save({
+        zcfPath: installedPath || configuration.zcfPath || '',
+        logUnmapped: configuration.logUnmapped === true,
+        debugRaw: configuration.debugRaw === true,
+        allowCzoneWrite: value
       })
     }
 
@@ -239,6 +249,30 @@ var signalk_czone = (function () {
           React.createElement('label', null, 'Installed ZCF path'),
           React.createElement('br'),
           React.createElement('input', { type: 'text', value: installedPath || '', readOnly: true, style: { width: '100%' } })
+        ),
+        React.createElement('div', { style: { marginTop: 14, marginBottom: 12, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+          React.createElement('label', null,
+            React.createElement('input', {
+              type: 'checkbox',
+              checked: configuration.allowCzoneWrite === true,
+              disabled: busy,
+              onChange: function (e) { setCzoneWrite(e.target.checked) }
+            }),
+            ' Enable CZone read/write control'
+          ),
+          React.createElement('div', { style: { marginTop: 6, fontSize: 12 } },
+            'Allows this plugin to send commands to CZone devices. This can change circuit states, modes, and configuration. Enable only if you understand the risks.'
+          ),
+          React.createElement('div', { style: { marginTop: 10 } },
+            React.createElement('button', {
+              type: 'button',
+              disabled: busy || configuration.allowCzoneWrite !== true,
+              onClick: function () {}
+            }, 'Read CZone configuration from network'),
+            configuration.allowCzoneWrite !== true
+              ? React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Enable CZone read/write control before reading configuration from the network. Reading the configuration requires sending a request to the CZone network.')
+              : React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Network configuration reading will be available when the CZone network read path is enabled.')
+          )
         ),
         React.createElement('label', null,
           React.createElement('input', { type: 'checkbox', checked: configuration.logUnmapped === true, onChange: function (e) { save(Object.assign({}, configuration, { zcfPath: installedPath || configuration.zcfPath || '', logUnmapped: e.target.checked })) } }),
