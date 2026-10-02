@@ -1,6 +1,6 @@
 {
   "name": "signalk-czone",
-  "version": "0.3.0-beta.7",
+  "version": "0.3.0-beta.8",
   "description": "Standalone Signal K CZone NMEA2000 current decoder with validated ZCF upload configuration and AC/DC classification metadata",
   "main": "index.js",
   "keywords": [
