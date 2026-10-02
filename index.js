@@ -43,7 +43,8 @@ function getConfig (config) {
   return {
     zcfPath: c.zcfPath || '',
     logUnmapped: c.logUnmapped === true,
-    debugRaw: c.debugRaw === true
+    debugRaw: c.debugRaw === true,
+    allowCzoneWrite: c.allowCzoneWrite === true
   }
 }
 
@@ -548,7 +549,8 @@ module.exports = function (app) {
           const newConfig = {
             zcfPath: target,
             logUnmapped: config.logUnmapped === true,
-            debugRaw: config.debugRaw === true
+            debugRaw: config.debugRaw === true,
+            allowCzoneWrite: config.allowCzoneWrite === true
           }
           await saveAndRestart(newConfig)
           res.status(200).json({
@@ -637,7 +639,7 @@ module.exports = function (app) {
         counters: { ...stats },
         diagnostics: {
           reassemblyInProgress: reassembler ? reassembler.size() : 0,
-          config: { logUnmapped: config.logUnmapped === true, debugRaw: config.debugRaw === true },
+          config: { logUnmapped: config.logUnmapped === true, debugRaw: config.debugRaw === true, allowCzoneWrite: config.allowCzoneWrite === true },
           lastDcPacket: stats.lastDcPacket,
           lastAcPacket: stats.lastAcPacket,
           lastPublished: stats.lastPublished,
