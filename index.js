@@ -463,7 +463,7 @@ module.exports = function (app) {
         }
         app.on('canboatjs:rawoutput', rawListener)
         running = true
-        setStatus(`CZone started: ${count} current mappings; raw PGNs 130817/130822`)
+        setStatus(`Loaded ${mapping.circuits.length} CZone circuits, ${count} with current mappings; raw PGNs 130817/130822`)
       } catch (error) {
         stats.decodeErrors++
         stats.lastError = error.message
