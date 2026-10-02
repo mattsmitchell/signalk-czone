@@ -116,18 +116,37 @@ module.exports = function (app) {
   let configFastPacket = null
   let lastNetworkConfig = null
 
-  const configDir = app.config && app.config.configPath
-    ? path.join(app.config.configPath, 'plugin-config-data', PLUGIN_ID)
-    : path.join(process.cwd(), '.signalk-czone')
+  const configRoot = app.config && app.config.configPath
+    ? path.join(app.config.configPath, 'plugin-config-data')
+    : process.cwd()
+  const configDir = path.join(configRoot, PLUGIN_ID)
+  const legacyConfigDir = path.join(configRoot, 'signalk-czone-circuits')
   const networkConfigDir = () => path.join(configDir, 'network-configs')
-  const zcfPath = () => {
+  const legacyNetworkConfigDir = () => path.join(legacyConfigDir, 'network-configs')
+
+  // The combined plugin owns the canonical signalk-czone namespace, but the
+  // configuration is shared with the retired signalk-czone-circuits plugin.
+  // Read from either namespace so an existing installation is used in place;
+  // never copy the ZCF just to migrate the plugin id. Writes remain canonical.
+  function configurationPaths (relativePath) {
+    return [
+      path.join(configDir, relativePath),
+      path.join(legacyConfigDir, relativePath)
+    ]
+  }
+
+  function findConfigurationPath (relativePath) {
+    return configurationPaths(relativePath).find(file => fs.existsSync(file)) || null
+  }
+
+  function zcfPath () {
     if (settings.configurationSource === 'networkCache' && settings.networkConfigFile) {
       const candidate = path.basename(String(settings.networkConfigFile))
-      const target = path.join(networkConfigDir(), candidate)
-      if (fs.existsSync(target)) return target
-      log(`Configured network configuration ${candidate} is missing; falling back to installation.zcf`)
+      const target = findConfigurationPath(path.join('network-configs', candidate))
+      if (target) return target
+      log(`Configured network configuration ${candidate} is missing from both configuration namespaces; falling back to installation.zcf`)
     }
-    return path.join(configDir, 'installation.zcf')
+    return findConfigurationPath('installation.zcf') || path.join(configDir, 'installation.zcf')
   }
 
   function log (message) {
@@ -855,8 +874,8 @@ module.exports = function (app) {
   }
 
   function installedZcfInfo () {
-    const file = path.join(configDir, 'installation.zcf')
-    if (!fs.existsSync(file)) return { exists: false, fileName: null, bytes: 0, vesselName: null, circuits: 0, modes: 0 }
+    const file = findConfigurationPath('installation.zcf')
+    if (!file) return { exists: false, fileName: null, bytes: 0, vesselName: null, circuits: 0, modes: 0 }
     let meta = null
     try { meta = JSON.parse(fs.readFileSync(`${file}.json`, 'utf8')) } catch (_) {}
     let parsed = null
@@ -867,17 +886,23 @@ module.exports = function (app) {
       bytes: fs.statSync(file).size,
       vesselName: (meta && meta.vesselName) || (parsed && parsed.vesselName) || null,
       circuits: parsed ? parsed.circuits.length : null,
-      modes: parsed ? parsed.modes.length : null
+      modes: parsed ? parsed.modes.length : null,
+      namespace: file.startsWith(legacyConfigDir + path.sep) ? 'signalk-czone-circuits' : 'signalk-czone'
     }
   }
 
   function listNetworkConfigs () {
     fs.mkdirSync(networkConfigDir(), { recursive: true })
-    return fs.readdirSync(networkConfigDir())
-      .filter(name => /\.czone\.net$/i.test(name))
-      .sort()
-      .map(name => {
-        const filePath = path.join(networkConfigDir(), name)
+    const files = new Map()
+    for (const dir of [networkConfigDir(), legacyNetworkConfigDir()]) {
+      if (!fs.existsSync(dir)) continue
+      for (const name of fs.readdirSync(dir)) {
+        if (/\.czone\.net$/i.test(name) && !files.has(name)) files.set(name, path.join(dir, name))
+      }
+    }
+    return [...files.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, filePath]) => {
         let meta = null
         try { meta = JSON.parse(fs.readFileSync(`${filePath}.json`, 'utf8')) } catch (_) {}
         return { file: name, bytes: fs.statSync(filePath).size, metadata: meta }
