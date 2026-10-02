@@ -1,8 +1,4 @@
-/*
- * Signal K classic Module Federation container.
- * Exposes ./PluginConfigurationPanel without bundling React; the Signal K
- * Admin UI supplies the host React instance.
- */
+/* Signal K classic Module Federation configuration panel. */
 var signalk_czone = (function () {
   function getReact () {
     var React = globalThis.__SK_REACT__ || globalThis.React
@@ -10,346 +6,230 @@ var signalk_czone = (function () {
     return React
   }
 
-  function fmtBytes (bytes) {
-    if (bytes == null) return '—'
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-  }
-
-  function fmtUptime (seconds) {
-    if (seconds == null) return '—'
-    var s = Number(seconds) || 0
-    var d = Math.floor(s / 86400)
-    s %= 86400
-    var h = Math.floor(s / 3600)
-    s %= 3600
-    var m = Math.floor(s / 60)
-    var sec = s % 60
-    return (d ? d + 'd ' : '') + (h ? h + 'h ' : '') + (m ? m + 'm ' : '') + sec + 's'
-  }
-
-  function fmtTime (value) {
-    if (!value) return '—'
-    try { return new Date(value).toLocaleString() } catch (_) { return String(value) }
-  }
-
-  function Cell (React, value) {
-    return React.createElement('td', { style: { padding: '4px 6px', borderBottom: '1px solid #ddd', fontSize: 12 } }, value == null ? '—' : String(value))
-  }
-
-  function Diagnostics (props) {
-    var React = getReact()
-    var stateData = React.useState(null)
-    var data = stateData[0]
-    var setData = stateData[1]
-    var stateBusy = React.useState(true)
-    var busy = stateBusy[0]
-    var setBusy = stateBusy[1]
-    var stateError = React.useState('')
-    var error = stateError[0]
-    var setError = stateError[1]
-
-    function load () {
-      setBusy(true)
-      setError('')
-      return fetch('/plugins/signalk-czone/diagnostics', { credentials: 'same-origin' })
-        .then(function (response) {
-          return response.text().then(function (body) {
-            var value
-            try { value = JSON.parse(body) } catch (_) { value = null }
-            if (!response.ok) throw new Error(value && value.error ? value.error : body || ('HTTP ' + response.status))
-            return value
-          })
-        })
-        .then(function (value) { setData(value) })
-        .catch(function (err) { setError(err && err.message ? err.message : String(err)) })
-        .finally(function () { setBusy(false) })
-    }
-
-    React.useEffect(function () {
-      var active = true
-      load()
-      var timer = setInterval(function () { if (active) load() }, 3000)
-      return function () { active = false; clearInterval(timer) }
-    }, [])
-
-    if (busy && !data) return React.createElement('div', null, 'Loading CZone diagnostics…')
-    if (error && !data) return React.createElement('div', { role: 'alert' }, 'Diagnostics unavailable: ' + error)
-    if (!data) return React.createElement('div', null, 'No diagnostic data available.')
-
-    var counters = data.counters || {}
-    var zcf = data.zcf || {}
-    var circuits = Array.isArray(data.circuits) ? data.circuits : []
-    var last = data.diagnostics || {}
-    var cardStyle = { border: '1px solid #ddd', borderRadius: 4, padding: 10, marginBottom: 10 }
-    var tableStyle = { borderCollapse: 'collapse', width: '100%' }
-
-    return React.createElement('div', null,
-      React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } },
-        React.createElement('h4', { style: { margin: 0 } }, 'CZone diagnostics'),
-        React.createElement('button', { type: 'button', disabled: busy, onClick: load }, busy ? 'Refreshing…' : 'Refresh')
-      ),
-      error ? React.createElement('div', { role: 'alert', style: { marginBottom: 8 } }, error) : null,
-      React.createElement('div', { style: cardStyle },
-        React.createElement('strong', null, 'Plugin'),
-        React.createElement('div', { style: { marginTop: 6 } }, 'Status: ', data.running ? 'Running' : 'Stopped'),
-        React.createElement('div', null, 'Uptime: ', fmtUptime(data.uptimeSeconds)),
-        React.createElement('div', null, 'Reassembly in progress: ', last.reassemblyInProgress == null ? '—' : last.reassemblyInProgress)
-      ),
-      React.createElement('div', { style: cardStyle },
-        React.createElement('strong', null, 'ZCF'),
-        React.createElement('div', { style: { marginTop: 6 } }, zcf.fileName || 'No ZCF loaded'),
-        React.createElement('div', null, 'Size: ', fmtBytes(zcf.fileSize)),
-        React.createElement('div', null, 'Circuits: ', zcf.circuits == null ? '—' : zcf.circuits, '  •  Current mappings: ', zcf.currentMappings == null ? '—' : zcf.currentMappings),
-        React.createElement('div', null, 'Mappings by PGN: ', JSON.stringify(zcf.mappingsByPgn || {})),
-        zcf.warnings && zcf.warnings.length ? React.createElement('div', { style: { marginTop: 5 } }, 'Warnings: ', zcf.warnings.join('; ')) : null
-      ),
-      React.createElement('div', { style: cardStyle },
-        React.createElement('strong', null, 'Traffic'),
-        React.createElement('div', { style: { marginTop: 6 } }, 'Raw frames: ', counters.rawFrames || 0),
-        React.createElement('div', null, 'CZone packets: ', counters.packetsDecoded || 0),
-        React.createElement('div', null, 'DC packets: ', counters.dcPackets || 0, '  •  AC packets: ', counters.acPackets || 0),
-        React.createElement('div', null, 'Values published: ', counters.valuesPublished || 0),
-        React.createElement('div', null, 'Unmapped: ', counters.unmapped || 0, '  •  Invalid: ', counters.invalidCzone || 0, '  •  Parse errors: ', counters.parseErrors || 0, '  •  Decode errors: ', counters.decodeErrors || 0)
-      ),
-      React.createElement('div', { style: cardStyle },
-        React.createElement('strong', null, 'Last activity'),
-        React.createElement('div', { style: { marginTop: 6 } }, 'Last DC packet: ', fmtTime(last.lastDcPacket && last.lastDcPacket.timestamp)),
-        React.createElement('div', null, 'Last AC packet: ', fmtTime(last.lastAcPacket && last.lastAcPacket.timestamp)),
-        React.createElement('div', null, 'Last published: ', fmtTime(last.lastPublished && last.lastPublished.timestamp)),
-        counters.lastError ? React.createElement('div', { style: { marginTop: 5 } }, 'Last error: ', counters.lastError) : null
-      ),
-      React.createElement('div', { style: { marginTop: 12 } },
-        React.createElement('strong', null, 'Published circuits (', circuits.length, ')'),
-        React.createElement('div', { style: { overflowX: 'auto', marginTop: 6 } },
-          React.createElement('table', { style: tableStyle },
-            React.createElement('thead', null,
-              React.createElement('tr', null,
-                React.createElement('th', { style: { textAlign: 'left', padding: '4px 6px' } }, 'Path'),
-                React.createElement('th', { style: { textAlign: 'right', padding: '4px 6px' } }, 'A'),
-                React.createElement('th', { style: { textAlign: 'right', padding: '4px 6px' } }, 'PGN'),
-                React.createElement('th', { style: { textAlign: 'right', padding: '4px 6px' } }, 'Module'),
-                React.createElement('th', { style: { textAlign: 'right', padding: '4px 6px' } }, 'Page'),
-                React.createElement('th', { style: { textAlign: 'right', padding: '4px 6px' } }, 'Slot'),
-                React.createElement('th', { style: { textAlign: 'right', padding: '4px 6px' } }, 'Source'),
-                React.createElement('th', { style: { textAlign: 'left', padding: '4px 6px' } }, 'Last update')
-              )
-            ),
-            React.createElement('tbody', null,
-              circuits.map(function (circuit, index) {
-                return React.createElement('tr', { key: circuit.path || index },
-                  Cell(React, circuit.path),
-                  Cell(React, circuit.current),
-                  Cell(React, circuit.pgn),
-                  Cell(React, circuit.module == null ? null : '0x' + Number(circuit.module).toString(16).padStart(2, '0')),
-                  Cell(React, circuit.page),
-                  Cell(React, circuit.slot),
-                  Cell(React, circuit.source == null ? null : '0x' + Number(circuit.source).toString(16).padStart(2, '0')),
-                  Cell(React, fmtTime(circuit.timestamp))
-                )
-              })
-            )
-          )
-        )
-      )
-    )
-  }
-
   function PluginConfigurationPanel (props) {
     var React = getReact()
     var configuration = props.configuration || {}
     var save = props.save
-    var useState = React.useState
-    var stateFile = useState(null)
-    var file = stateFile[0]
-    var setFile = stateFile[1]
-    var stateInstalledPath = useState(configuration.zcfPath || '')
-    var installedPath = stateInstalledPath[0]
-    var setInstalledPath = stateInstalledPath[1]
-    var stateBusy = useState(false)
-    var busy = stateBusy[0]
-    var setBusy = stateBusy[1]
-    var stateMessage = useState('')
-    var message = stateMessage[0]
-    var setMessage = stateMessage[1]
-    var stateError = useState('')
-    var error = stateError[0]
-    var setError = stateError[1]
-    var stateNetworkRead = useState(null)
-    var networkRead = stateNetworkRead[0]
-    var setNetworkRead = stateNetworkRead[1]
-    var stateNetworkBusy = useState(false)
-    var networkBusy = stateNetworkBusy[0]
-    var setNetworkBusy = stateNetworkBusy[1]
-    var stateTab = useState('configuration')
-    var tab = stateTab[0]
-    var setTab = stateTab[1]
+    var state = React.useState(null)
+    var data = state[0]
+    var setData = state[1]
+    var busyState = React.useState(false)
+    var busy = busyState[0]
+    var setBusy = busyState[1]
+    var errorState = React.useState('')
+    var error = errorState[0]
+    var setError = errorState[1]
+    var readState = React.useState(null)
+    var read = readState[0]
+    var setRead = readState[1]
+    var selectedState = React.useState(configuration.networkConfigFile || '')
+    var selected = selectedState[0]
+    var setSelected = selectedState[1]
+    var sourceState = React.useState(configuration.configurationSource || 'installedZcf')
+    var localSource = sourceState[0]
+    var setLocalSource = sourceState[1]
+    var uploadState = React.useState(null)
+    var uploadFile = uploadState[0]
+    var setUploadFile = uploadState[1]
 
-    function upload () {
-      if (!file) return Promise.resolve()
-      setBusy(true)
-      setMessage('')
-      setError('')
-      var form = new FormData()
-      form.append('zcf', file, file.name)
-      return fetch('/plugins/signalk-czone/zcf/upload', {
-        method: 'POST',
-        body: form,
-        credentials: 'same-origin'
-      }).then(function (response) {
-        return response.text().then(function (body) {
-          var data
-          try { data = JSON.parse(body) } catch (_) { data = null }
-          if (!response.ok) throw new Error(data && data.error ? data.error : body || ('HTTP ' + response.status))
-          return data || {}
+    function loadConfiguration () {
+      return fetch('/plugins/signalk-czone/configuration', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw new Error('Could not load CZone configuration status'); return r.json() })
+        .then(function (value) {
+          setData(value)
+          setSelected(value.networkConfigFile || configuration.networkConfigFile || '')
+          setLocalSource(value.source || configuration.configurationSource || 'installedZcf')
+          if (value.networkRead) setRead(value.networkRead)
+          return value
         })
-      }).then(function (data) {
-        if (data.zcfPath) setInstalledPath(data.zcfPath)
-        if (data.configuration) save(Object.assign({}, configuration, data.configuration))
-        setMessage(data.message || 'ZCF installed successfully. The plugin will restart.')
-        setFile(null)
-      }).catch(function (err) {
-        setError(err && err.message ? err.message : String(err))
-      }).finally(function () { setBusy(false) })
-    }
-
-    function onSave () {
-      save({
-        zcfPath: installedPath || configuration.zcfPath || '',
-        logUnmapped: configuration.logUnmapped === true,
-        debugRaw: configuration.debugRaw === true,
-        allowCzoneWrite: configuration.allowCzoneWrite === true
-      })
-    }
-
-    function setCzoneWrite (value) {
-      save({
-        zcfPath: installedPath || configuration.zcfPath || '',
-        logUnmapped: configuration.logUnmapped === true,
-        debugRaw: configuration.debugRaw === true,
-        allowCzoneWrite: value
-      })
-    }
-
-    function readNetworkConfiguration () {
-      if (configuration.allowCzoneWrite !== true || networkBusy) return
-      setNetworkBusy(true)
-      setMessage('')
-      setError('')
-      fetch('/plugins/signalk-czone/configuration/network/read', {
-        method: 'POST',
-        credentials: 'same-origin'
-      }).then(function (response) {
-        return response.text().then(function (body) {
-          var data
-          try { data = JSON.parse(body) } catch (_) { data = null }
-          if (!response.ok) throw new Error(data && data.error ? data.error : body || ('HTTP ' + response.status))
-          return data || {}
-        })
-      }).then(function (data) {
-        setNetworkRead({ status: data.status || 'reading', startedAt: data.startedAt, message: data.message })
-        setMessage('CZone network configuration read started.')
-      }).catch(function (err) {
-        setError(err && err.message ? err.message : String(err))
-      }).finally(function () { setNetworkBusy(false) })
     }
 
     React.useEffect(function () {
-      if (!configuration.allowCzoneWrite) {
-        setNetworkRead(null)
-        return undefined
-      }
-      var active = true
-      function poll () {
-        fetch('/plugins/signalk-czone/configuration/network/status', { credentials: 'same-origin' })
-          .then(function (response) { return response.ok ? response.json() : null })
-          .then(function (data) {
-            if (active && data && data.read) setNetworkRead(data.read)
-          })
-          .catch(function () {})
-      }
-      poll()
-      var timer = setInterval(poll, 2000)
-      return function () { active = false; clearInterval(timer) }
-    }, [configuration.allowCzoneWrite])
+      loadConfiguration().catch(function (err) { setError(err.message || String(err)) })
+    }, [])
 
-    var tabButtonStyle = function (active) {
-      return { marginRight: 6, padding: '5px 10px', fontWeight: active ? 'bold' : 'normal' }
+    React.useEffect(function () {
+      if (!read || read.status !== 'reading') return undefined
+      var timer = setInterval(function () {
+        loadConfiguration().catch(function () {})
+      }, 1000)
+      return function () { clearInterval(timer) }
+    }, [read && read.status])
+
+    function persist(next) {
+      setBusy(true); setError('')
+      try {
+        save(Object.assign({}, configuration, next))
+        setData(Object.assign({}, data || {}, next))
+      } catch (err) {
+        setError(err.message || String(err))
+      } finally {
+        setBusy(false)
+      }
     }
 
+    function setSending (value) {
+      persist({ allowCzoneWrite: value })
+    }
+
+    function chooseSource (value) {
+      setLocalSource(value)
+      if (value === 'installedZcf') {
+        setSelected('')
+        persist({ configurationSource: 'installedZcf', networkConfigFile: '' })
+      } else if (selected) {
+        persist({ configurationSource: 'networkCache', networkConfigFile: selected })
+      }
+    }
+
+    function useSelected () {
+      if (!selected) return
+      setBusy(true); setError('')
+      fetch('/plugins/signalk-czone/configuration/network/use', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: selected })
+      }).then(function (r) {
+        return r.text().then(function (body) {
+          var value
+          try { value = JSON.parse(body) } catch (_) { value = null }
+          if (!r.ok) throw new Error(value && value.error ? value.error : body || ('HTTP ' + r.status))
+          return value || {}
+        })
+      }).then(function () {
+        configuration.configurationSource = 'networkCache'
+        configuration.networkConfigFile = selected
+        setData(Object.assign({}, data || {}, { source: 'networkCache', networkConfigFile: selected }))
+      }).catch(function (err) {
+        setError(err.message || String(err))
+      }).finally(function () { setBusy(false); loadConfiguration().catch(function () {}) })
+    }
+
+    function uploadZcf () {
+      if (!uploadFile) return
+      var name = String(uploadFile.name || '')
+      if (!/\.zcf$/i.test(name)) {
+        setError('Please choose a .zcf file')
+        return
+      }
+      setBusy(true); setError('')
+      var form = new FormData()
+      form.append('file', uploadFile, name)
+      fetch('/plugins/signalk-czone/zcf/upload', {
+        method: 'POST', credentials: 'same-origin', body: form
+      }).then(function (r) {
+        return r.text().then(function (body) {
+          var value
+          try { value = JSON.parse(body) } catch (_) { value = null }
+          if (!r.ok) throw new Error(value && value.error ? value.error : body || ('HTTP ' + r.status))
+          return value || {}
+        })
+      }).then(function (value) {
+        setLocalSource('installedZcf')
+        setSelected('')
+        setUploadFile(null)
+        configuration.configurationSource = 'installedZcf'
+        configuration.networkConfigFile = ''
+        setData(Object.assign({}, data || {}, { source: 'installedZcf', networkConfigFile: '' }))
+        return loadConfiguration().then(function () {
+          setRead({ status: 'complete', message: value.message || 'ZCF uploaded and installed.' })
+        })
+      }).catch(function (err) {
+        setError(err.message || String(err))
+      }).finally(function () { setBusy(false) })
+    }
+
+    function readFromNetwork () {
+      setBusy(true); setError(''); setRead({ status: 'reading', message: 'Starting CZone configuration read…' })
+      fetch('/plugins/signalk-czone/configuration/network/read', {
+        method: 'POST', credentials: 'same-origin'
+      }).then(function (r) {
+        return r.text().then(function (body) {
+          var value
+          try { value = JSON.parse(body) } catch (_) { value = null }
+          if (!r.ok) throw new Error(value && value.error ? value.error : body || ('HTTP ' + r.status))
+          return value || {}
+        })
+      }).then(function (value) {
+        setRead(value)
+        return loadConfiguration()
+      }).catch(function (err) {
+        setError(err.message || String(err))
+        setRead({ status: 'error', error: err.message || String(err) })
+      }).finally(function () { setBusy(false) })
+    }
+
+    var installed = data && data.installedZcf
+    var files = data && data.availableNetworkConfigs ? data.availableNetworkConfigs : []
+    var source = localSource
+    var nmeaReady = data && data.nmeaReady === true
+    var current = data && data.current
+    var reading = read && read.status === 'reading'
+
     return React.createElement('div', null,
-      React.createElement('div', { style: { marginBottom: 12 } },
-        React.createElement('button', { type: 'button', style: tabButtonStyle(tab === 'configuration'), onClick: function () { setTab('configuration') } }, 'Configuration'),
-        React.createElement('button', { type: 'button', style: tabButtonStyle(tab === 'diagnostics'), onClick: function () { setTab('diagnostics') } }, 'Diagnostics')
-      ),
-      tab === 'diagnostics' ? React.createElement(Diagnostics, props) : React.createElement('div', null,
-        React.createElement('h4', null, 'CZone configuration'),
-        React.createElement('div', { style: { marginBottom: 12 } },
-          React.createElement('label', null, 'ZCF file'),
-          React.createElement('br'),
-          React.createElement('input', { type: 'file', accept: '.zcf,application/octet-stream', disabled: busy, onChange: function (e) { setFile(e.target.files && e.target.files[0] ? e.target.files[0] : null) } }),
-          React.createElement('div', { style: { marginTop: 6 } },
-            React.createElement('button', { type: 'button', disabled: !file || busy, onClick: upload }, busy ? 'Uploading…' : 'Upload and install ZCF')
+      React.createElement('h4', null, 'CZone Circuits Configuration'),
+      React.createElement('p', null, 'Configuration is loaded locally at Signal K startup. Reading from the CZone network is an explicit maintenance action and is never performed automatically at startup.'),
+
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'Configuration source'),
+        React.createElement('div', { style: { marginTop: 9 } },
+          React.createElement('label', { style: { display: 'block', marginBottom: 8 } },
+            React.createElement('input', { type: 'radio', name: 'czone-source', checked: source === 'installedZcf', disabled: busy, onChange: function () { chooseSource('installedZcf') } }),
+            ' Use installed/uploaded ZCF'
+          ),
+          React.createElement('div', { style: { marginLeft: 24, fontSize: 12 } }, installed && installed.exists
+            ? (installed.fileName || 'installation.zcf') + (installed.vesselName ? ' · ' + installed.vesselName : '') + (installed.circuits != null ? ' · ' + installed.circuits + ' circuits · ' + installed.modes + ' modes' : '')
+            : 'No uploaded ZCF is installed.'),
+          React.createElement('label', { style: { display: 'block', marginTop: 13 } },
+            React.createElement('input', { type: 'radio', name: 'czone-source', checked: source === 'networkCache', disabled: busy, onChange: function () { chooseSource('networkCache') } }),
+            ' Use saved CZone network configuration'
+          ),
+          React.createElement('div', { style: { marginTop: 7, marginLeft: 24 } },
+            React.createElement('select', { value: selected, disabled: busy || !files.length, onChange: function (e) { setSelected(e.target.value) }, style: { maxWidth: '100%', padding: 5 } },
+              React.createElement('option', { value: '' }, files.length ? 'Select a .czone.net file…' : 'No saved network configurations'),
+              files.map(function (item) { return React.createElement('option', { key: item.file, value: item.file }, item.file + ' (' + item.bytes + ' bytes)') })
+            ),
+            React.createElement('button', { type: 'button', disabled: busy || !selected, onClick: useSelected, style: { marginLeft: 8 } }, 'Use Selected')
           )
-        ),
-        React.createElement('div', { style: { marginBottom: 12 } },
-          React.createElement('label', null, 'Installed ZCF path'),
-          React.createElement('br'),
-          React.createElement('input', { type: 'text', value: installedPath || '', readOnly: true, style: { width: '100%' } })
-        ),
-        React.createElement('div', { style: { marginTop: 14, marginBottom: 12, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        )
+      ),
+
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'ZCF file'),
+        React.createElement('p', { style: { margin: '7px 0', fontSize: 12 } }, 'Upload a CZone .zcf file to install it as the local configuration. Uploading switches the configuration source back to the installed/uploaded ZCF.'),
+        React.createElement('input', { type: 'file', accept: '.zcf,application/octet-stream', disabled: busy, onChange: function (e) { setUploadFile(e.target.files && e.target.files[0] ? e.target.files[0] : null) } }),
+        React.createElement('div', { style: { marginTop: 8 } },
+          React.createElement('button', { type: 'button', disabled: busy || !uploadFile, onClick: uploadZcf }, busy ? 'Uploading ZCF…' : 'Upload and install ZCF'),
+          uploadFile ? React.createElement('span', { style: { marginLeft: 8, fontSize: 12 } }, uploadFile.name) : null
+        )
+      ),
+
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'CZone network configuration'),
+        React.createElement('p', { style: { margin: '7px 0', fontSize: 12 } }, 'Read the complete configuration from the CZone network and save it locally as a .czone.net file. This does not automatically change the active configuration.'),
+        React.createElement('button', { type: 'button', disabled: busy || reading || !nmeaReady || configuration.allowCzoneWrite !== true, onClick: readFromNetwork }, reading ? 'Reading CZone configuration…' : 'Read From Network and Save'),
+        configuration.allowCzoneWrite !== true ? React.createElement('div', { style: { marginTop: 7, fontSize: 12 } }, 'Enable CZone read/write control before reading from the network. Reading the configuration requires sending a request to CZone.') : null,
+        !nmeaReady ? React.createElement('div', { style: { marginTop: 7, fontSize: 12 } }, 'NMEA 2000 output is waiting; the read action becomes available when output is ready.') : null,
+        reading ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Receiving configuration · ' + (read.receivedBytes || 0) + ' bytes' + (read.blockCount != null ? ' · ' + read.blockCount + ' blocks' : '') + (read.lastPacketAt ? ' · last block ' + new Date(read.lastPacketAt).toLocaleTimeString() : '')) : null,
+        read && read.status === 'complete' ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Saved: ' + (read.file || 'CZone network configuration')) : null
+      ),
+
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #c55', borderRadius: 6 } },
+        React.createElement('strong', null, 'CZone transmit control'),
+        React.createElement('div', { style: { marginTop: 9 } },
           React.createElement('label', null,
-            React.createElement('input', {
-              type: 'checkbox',
-              checked: configuration.allowCzoneWrite === true,
-              disabled: busy,
-              onChange: function (e) { setCzoneWrite(e.target.checked) }
-            }),
+            React.createElement('input', { type: 'checkbox', checked: configuration.allowCzoneWrite === true, disabled: busy, onChange: function (e) { setSending(e.target.checked) } }),
             ' Enable CZone read/write control'
           ),
-          React.createElement('div', { style: { marginTop: 6, fontSize: 12 } },
-            'Allows this plugin to send commands to CZone devices. This can change circuit states, modes, and configuration. Enable only if you understand the risks.'
-          ),
-          React.createElement('div', { style: { marginTop: 10 } },
-            React.createElement('button', {
-              type: 'button',
-              disabled: busy || configuration.allowCzoneWrite !== true,
-              onClick: readNetworkConfiguration
-            }, networkBusy ? 'Reading CZone configuration…' : 'Read CZone configuration from network'),
-            configuration.allowCzoneWrite !== true
-              ? React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Enable CZone read/write control before reading configuration from the network. Reading the configuration requires sending a request to the CZone network.')
-              : React.createElement('div', { style: { marginTop: 6, fontSize: 12 } },
-                networkRead && networkRead.status === 'complete'
-                  ? (networkRead.message || 'CZone network configuration read complete.')
-                  : networkRead && networkRead.status === 'failed'
-                    ? ('Network configuration read failed: ' + (networkRead.message || 'unknown error'))
-                    : 'Reading the configuration requires sending a request and acknowledging the CZone network data blocks.'
-              )
-          )
-        ),
-        React.createElement('label', null,
-          React.createElement('input', { type: 'checkbox', checked: configuration.logUnmapped === true, onChange: function (e) { save(Object.assign({}, configuration, { zcfPath: installedPath || configuration.zcfPath || '', logUnmapped: e.target.checked })) } }),
-          ' Log unmapped circuits'
-        ),
-        React.createElement('br'),
-        React.createElement('label', null,
-          React.createElement('input', { type: 'checkbox', checked: configuration.debugRaw === true, onChange: function (e) { save(Object.assign({}, configuration, { zcfPath: installedPath || configuration.zcfPath || '', debugRaw: e.target.checked })) } }),
-          ' Log completed raw CZone packets'
-        ),
-        React.createElement('div', { style: { marginTop: 12 } },
-          React.createElement('button', { type: 'button', disabled: busy, onClick: onSave }, 'Save configuration')
-        ),
-        message ? React.createElement('div', { role: 'status', style: { marginTop: 8 } }, message) : null,
-        error ? React.createElement('div', { role: 'alert', style: { marginTop: 8 } }, 'Upload failed: ' + error) : null
-      )
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Allows this plugin to send commands to CZone devices. This can change circuit states, modes, and configuration. Enable only if you understand the risks.')
+      ),
+
+      current ? React.createElement('div', { style: { fontSize: 12 } }, 'Currently loaded: ' + (current.vesselName || current.fileName) + ' · ' + current.circuits + ' circuits · ' + current.modes + ' modes') : null,
+      error ? React.createElement('div', { role: 'alert', style: { marginTop: 9 } }, 'Error: ' + error) : null
     )
   }
 
-  var modules = {
-    './PluginConfigurationPanel': function () { return { default: PluginConfigurationPanel } }
-  }
-
+  var modules = { './PluginConfigurationPanel': function () { return { default: PluginConfigurationPanel } } }
   return {
     get: function (request) {
       if (!modules[request]) return Promise.reject(new Error('Unknown exposed module: ' + request))
