@@ -120,33 +120,16 @@ module.exports = function (app) {
     ? path.join(app.config.configPath, 'plugin-config-data')
     : process.cwd()
   const configDir = path.join(configRoot, PLUGIN_ID)
-  const legacyConfigDir = path.join(configRoot, 'signalk-czone-circuits')
   const networkConfigDir = () => path.join(configDir, 'network-configs')
-  const legacyNetworkConfigDir = () => path.join(legacyConfigDir, 'network-configs')
-
-  // The combined plugin owns the canonical signalk-czone namespace, but the
-  // configuration is shared with the retired signalk-czone-circuits plugin.
-  // Read from either namespace so an existing installation is used in place;
-  // never copy the ZCF just to migrate the plugin id. Writes remain canonical.
-  function configurationPaths (relativePath) {
-    return [
-      path.join(configDir, relativePath),
-      path.join(legacyConfigDir, relativePath)
-    ]
-  }
-
-  function findConfigurationPath (relativePath) {
-    return configurationPaths(relativePath).find(file => fs.existsSync(file)) || null
-  }
 
   function zcfPath () {
     if (settings.configurationSource === 'networkCache' && settings.networkConfigFile) {
       const candidate = path.basename(String(settings.networkConfigFile))
-      const target = findConfigurationPath(path.join('network-configs', candidate))
-      if (target) return target
-      log(`Configured network configuration ${candidate} is missing from both configuration namespaces; falling back to installation.zcf`)
+      const target = path.join(networkConfigDir(), candidate)
+      if (fs.existsSync(target)) return target
+      log(`Configured network configuration ${candidate} is missing from the signalk-czone namespace; falling back to installation.zcf`)
     }
-    return findConfigurationPath('installation.zcf') || path.join(configDir, 'installation.zcf')
+    return path.join(configDir, 'installation.zcf')
   }
 
   function log (message) {
@@ -874,8 +857,8 @@ module.exports = function (app) {
   }
 
   function installedZcfInfo () {
-    const file = findConfigurationPath('installation.zcf')
-    if (!file) return { exists: false, fileName: null, bytes: 0, vesselName: null, circuits: 0, modes: 0 }
+    const file = path.join(configDir, 'installation.zcf')
+    if (!fs.existsSync(file)) return { exists: false, fileName: null, bytes: 0, vesselName: null, circuits: 0, modes: 0 }
     let meta = null
     try { meta = JSON.parse(fs.readFileSync(`${file}.json`, 'utf8')) } catch (_) {}
     let parsed = null
@@ -886,29 +869,23 @@ module.exports = function (app) {
       bytes: fs.statSync(file).size,
       vesselName: (meta && meta.vesselName) || (parsed && parsed.vesselName) || null,
       circuits: parsed ? parsed.circuits.length : null,
-      modes: parsed ? parsed.modes.length : null,
-      namespace: file.startsWith(legacyConfigDir + path.sep) ? 'signalk-czone-circuits' : 'signalk-czone'
+      modes: parsed ? parsed.modes.length : null
     }
   }
 
   function listNetworkConfigs () {
-    fs.mkdirSync(networkConfigDir(), { recursive: true })
-    const files = new Map()
-    for (const dir of [networkConfigDir(), legacyNetworkConfigDir()]) {
-      if (!fs.existsSync(dir)) continue
-      for (const name of fs.readdirSync(dir)) {
-        if (/\.czone\.net$/i.test(name) && !files.has(name)) files.set(name, path.join(dir, name))
-      }
-    }
-    return [...files.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([name, filePath]) => {
+    const dir = networkConfigDir()
+    fs.mkdirSync(dir, { recursive: true })
+    return fs.readdirSync(dir)
+      .filter(name => /\.czone\.net$/i.test(name))
+      .sort((a, b) => a.localeCompare(b))
+      .map(file => {
+        const fullPath = path.join(dir, file)
         let meta = null
-        try { meta = JSON.parse(fs.readFileSync(`${filePath}.json`, 'utf8')) } catch (_) {}
-        return { file: name, bytes: fs.statSync(filePath).size, metadata: meta }
+        try { meta = JSON.parse(fs.readFileSync(`${fullPath}.json`, 'utf8')) } catch (_) {}
+        return { file, bytes: fs.statSync(fullPath).size, metadata: meta }
       })
   }
-
   async function saveAndRestart (newSettings) {
     // Follow the same lifecycle pattern as the existing signalk-czone plugin:
     // persist the configuration first, then ask Signal K to restart this plugin
