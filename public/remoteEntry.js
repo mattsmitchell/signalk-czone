@@ -204,16 +204,6 @@ var signalk_czone = (function () {
         )
       ),
 
-      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
-        React.createElement('strong', null, 'CZone network configuration'),
-        React.createElement('p', { style: { margin: '7px 0', fontSize: 12 } }, 'Read the complete configuration from the CZone network and save it locally as a .czone.net file. This does not automatically change the active configuration.'),
-        React.createElement('button', { type: 'button', disabled: busy || reading || !nmeaReady || configuration.allowCzoneWrite !== true, onClick: readFromNetwork }, reading ? 'Reading CZone configuration…' : 'Read From Network and Save'),
-        configuration.allowCzoneWrite !== true ? React.createElement('div', { style: { marginTop: 7, fontSize: 12 } }, 'Enable CZone read/write control before reading from the network. Reading the configuration requires sending a request to CZone.') : null,
-        !nmeaReady ? React.createElement('div', { style: { marginTop: 7, fontSize: 12 } }, 'NMEA 2000 output is waiting; the read action becomes available when output is ready.') : null,
-        reading ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Receiving configuration · ' + (read.receivedBytes || 0) + ' bytes' + (read.blockCount != null ? ' · ' + read.blockCount + ' blocks' : '') + (read.lastPacketAt ? ' · last block ' + new Date(read.lastPacketAt).toLocaleTimeString() : '')) : null,
-        read && read.status === 'complete' ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Saved: ' + (read.file || 'CZone network configuration')) : null
-      ),
-
       React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #c55', borderRadius: 6 } },
         React.createElement('strong', null, 'CZone transmit control'),
         React.createElement('div', { style: { marginTop: 9 } },
@@ -223,6 +213,15 @@ var signalk_czone = (function () {
           ),
         React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Allows this plugin to send commands to CZone devices. This can change circuit states, modes, and configuration. Enable only if you understand the risks.')
         )
+      ),
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'CZone network configuration'),
+        React.createElement('p', { style: { margin: '7px 0', fontSize: 12 } }, 'Read the complete configuration from the CZone network and save it locally as a .czone.net file. This does not automatically change the active configuration.'),
+        React.createElement('button', { type: 'button', disabled: busy || reading || !nmeaReady || configuration.allowCzoneWrite !== true, onClick: readFromNetwork }, reading ? 'Reading CZone configuration…' : 'Read From Network and Save'),
+        configuration.allowCzoneWrite !== true ? React.createElement('div', { style: { marginTop: 7, fontSize: 12 } }, 'Enable CZone read/write control before reading from the network. Reading the configuration requires sending a request to CZone.') : null,
+        !nmeaReady ? React.createElement('div', { style: { marginTop: 7, fontSize: 12 } }, 'NMEA 2000 output is waiting; the read action becomes available when output is ready.') : null,
+        reading ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Receiving configuration · ' + (read.receivedBytes || 0) + ' bytes' + (read.blockCount != null ? ' · ' + read.blockCount + ' blocks' : '') + (read.lastPacketAt ? ' · last block ' + new Date(read.lastPacketAt).toLocaleTimeString() : '')) : null,
+        read && read.status === 'complete' ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Saved: ' + (read.file || 'CZone network configuration')) : null
       ),
 
       current ? React.createElement('div', { style: { fontSize: 12 } }, 'Currently loaded: ' + (current.vesselName || current.fileName) + ' · ' + current.circuits + ' circuits · ' + current.modes + ' modes') : null,
