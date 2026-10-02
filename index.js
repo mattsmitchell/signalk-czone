@@ -6,8 +6,11 @@ const os = require('os')
 const {
   parseRawLine,
   createFastPacketReassembler,
-  decodeCzoneHeader
+  decodeCzoneHeader,
+  CIRCUIT_STATUS_PGN
 } = require('./lib/nmea2000')
+const circuitState = require('./lib/circuit-state')
+const signalk = require('./lib/signalk')
 
 const CURRENT_PGN_DC = 130822
 const CURRENT_PGN_AC = 130817
@@ -21,6 +24,7 @@ const RECORD_COUNT = 8
 const RECORD_SIZE = 3
 const CZONE_PAYLOAD_SIZE = 28
 const MAX_UPLOAD_BYTES = 1024 * 1024
+const STATUS_PGN = CIRCUIT_STATUS_PGN
 
 function hex2 (value) {
   return Number(value).toString(16).padStart(2, '0')
@@ -186,6 +190,8 @@ module.exports = function (app) {
   let restartPlugin = null
   let startedAt = null
   const circuitStatus = new Map()
+  const runtimeState = new Map()
+  const publishedCircuitValues = new Map()
 
   const stats = {
     rawFrames: 0,
@@ -225,6 +231,116 @@ module.exports = function (app) {
       return { state: 'ON', percent: 100 }
     }
     return { state: 'UNKNOWN', percent: null }
+  }
+
+  function initialiseCircuitState () {
+    runtimeState.clear()
+    publishedCircuitValues.clear()
+    if (!mapping || !Array.isArray(mapping.circuits)) return
+
+    for (const circuit of mapping.circuits) {
+      runtimeState.set(circuit.name, {
+        state: null,
+        percent: null,
+        lastObservedPercent: null,
+        statusObserved: false,
+        lastObserved: null,
+        zcfCircuitId: circuit.zcfCircuitId,
+        protocolCircuitId: circuit.protocolCircuitId,
+        capabilities: circuit.capabilities
+      })
+    }
+  }
+
+  function publishCircuitDelta (circuit, pathName, value, source) {
+    const previous = publishedCircuitValues.get(pathName)
+    if (previous !== undefined && Object.is(previous, value)) return false
+
+    publishedCircuitValues.set(pathName, value)
+    const delta = signalk.circuitDelta(pathName, value, circuit, source)
+    if (typeof app.handleMessage === 'function') {
+      app.handleMessage('signalk-czone', delta)
+    } else if (typeof app.emit === 'function') {
+      app.emit('delta', delta)
+    }
+    return true
+  }
+
+  function decodeCircuitStatus (frame) {
+    if (!frame || frame.pgn !== STATUS_PGN || !Buffer.isBuffer(frame.data) || frame.data.length !== 8) return
+    const status = circuitState.decodeCircuitStatus(frame.data)
+    if (!status || !mapping) return
+
+    const hasModule = mapping.circuits.some(c => Number(c.statusModule) === status.module)
+    if (!hasModule) return
+
+    for (const circuit of mapping.circuits) {
+      if (Number(circuit.statusModule) !== status.module) continue
+
+      const enabled = circuitState.circuitEnabled(status, circuit)
+      if (enabled == null) continue
+
+      const state = runtimeState.get(circuit.name)
+      if (state) {
+        state.statusObserved = true
+        state.state = enabled ? 'ON' : 'OFF'
+        state.lastObserved = {
+          state: enabled ? 'ON' : 'OFF',
+          source: { src: frame.source, pgn: frame.pgn }
+        }
+      }
+
+      publishCircuitDelta(
+        circuit,
+        signalk.statePath(circuit),
+        enabled,
+        signalk.nmea2000Source(frame.source, frame.pgn)
+      )
+
+      circuitStatus.set(signalk.statePath(circuit), {
+        pgn: frame.pgn,
+        module: status.module,
+        subtype: status.subtype,
+        bitmap: status.bitmap,
+        state: enabled ? 'ON' : 'OFF',
+        path: signalk.statePath(circuit),
+        source: frame.source,
+        timestamp: new Date().toISOString()
+      })
+    }
+  }
+
+  function decodeDcLevelAndPublish (packet) {
+    if (!mapping || !packet || packet.pgn !== CURRENT_PGN_DC || packet.payload.length !== CZONE_PAYLOAD_SIZE) return
+    const header = decodeCzoneHeader(packet.payload, CURRENT_PGN_DC)
+    if (!header) return
+
+    for (let slot = 0; slot < RECORD_COUNT; slot++) {
+      const i = 4 + slot * RECORD_SIZE
+      const levelRaw = packet.payload[i + 1] | (packet.payload[i + 2] << 8)
+      const level = circuitState.decodeDcLevel(levelRaw)
+
+      const circuit = mapping.circuits.find(c =>
+        Number(c.statusModule) === header.module &&
+        Number.isInteger(c.statusBit) &&
+        Math.floor(c.statusBit / 8) === header.page &&
+        (c.statusBit % 8) === slot
+      )
+      if (!circuit || level.percent == null) continue
+
+      const state = runtimeState.get(circuit.name)
+      if (state) {
+        state.percent = level.percent
+        state.lastObservedPercent = level.percent
+      }
+
+      publishCircuitDelta(
+        circuit,
+        signalk.brightnessPath(circuit),
+        Math.max(0, Math.min(100, level.percent)) / 100,
+        signalk.nmea2000Source(packet.source, packet.pgn)
+      )
+    }
   }
 
   function decodeDc (packet) {
@@ -313,8 +429,10 @@ module.exports = function (app) {
       stats.invalidCzone++
       return
     }
-    if (packet.pgn === CURRENT_PGN_DC) decodeDc(packet)
-    else if (packet.pgn === CURRENT_PGN_AC) decodeAc(packet)
+    if (packet.pgn === CURRENT_PGN_DC) {
+      decodeDc(packet)
+      decodeDcLevelAndPublish(packet)
+    } else if (packet.pgn === CURRENT_PGN_AC) decodeAc(packet)
   }
 
   function pluginDataDir () {
@@ -331,6 +449,7 @@ module.exports = function (app) {
     }
     mapping = loadMapping(config.zcfPath)
     if (!mapping) throw new Error('ZCF parser returned no mapping')
+    initialiseCircuitState()
     if (!Array.isArray(mapping.currentMappings)) {
       throw new Error('ZCF parser returned no currentMappings array')
     }
@@ -458,6 +577,10 @@ module.exports = function (app) {
             stats.parseErrors++
             return
           }
+          if (frame.pgn === STATUS_PGN) {
+            decodeCircuitStatus(frame)
+            return
+          }
           if (frame.pgn !== CURRENT_PGN_DC && frame.pgn !== CURRENT_PGN_AC) return
           reassembler.accept(frame)
         }
@@ -480,6 +603,8 @@ module.exports = function (app) {
       running = false
       startedAt = null
       circuitStatus.clear()
+      runtimeState.clear()
+      publishedCircuitValues.clear()
       setStatus('CZone stopped')
     },
 
