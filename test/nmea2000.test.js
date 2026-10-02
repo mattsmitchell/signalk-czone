@@ -16,3 +16,15 @@ assert.strictEqual(frame.source, 42)
 assert.deepStrictEqual([...frame.data], [0x27, 0x99, 0x0a, 0x00, 0x01, 0x00, 0x00, 0x00])
 
 console.log('nmea2000 passive parser tests passed')
+
+
+const output = []
+const app = { emit: (event, line) => output.push({ event, line }) }
+const emitted = nmea2000.emitPgn(app, {
+  pgn: 65290,
+  src: 0,
+  data: Buffer.from([0x27, 0x99, 0x00, 0x00, 0x00, 0x00, 0xC0, 0xFF])
+})
+assert.strictEqual(output[0].event, 'nmea2000out')
+assert.strictEqual(emitted, output[0].line)
+assert(emitted.includes(',65290,0,255,8,27,99,00,00,00,00,c0,ff'))
