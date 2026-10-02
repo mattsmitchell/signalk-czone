@@ -38,7 +38,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js && node test/czone.test.js"
+    "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js && node test/czone.test.js && node test/circuit-state.test.js"
   },
   "dependencies": {
     "signalk-czone-zcf": "github:mattsmitchell/signalk-czone-zcf#main"
