@@ -176,6 +176,12 @@ var signalk_czone = (function () {
     var stateError = useState('')
     var error = stateError[0]
     var setError = stateError[1]
+    var stateNetworkRead = useState(null)
+    var networkRead = stateNetworkRead[0]
+    var setNetworkRead = stateNetworkRead[1]
+    var stateNetworkBusy = useState(false)
+    var networkBusy = stateNetworkBusy[0]
+    var setNetworkBusy = stateNetworkBusy[1]
     var stateTab = useState('configuration')
     var tab = stateTab[0]
     var setTab = stateTab[1]
@@ -226,6 +232,48 @@ var signalk_czone = (function () {
       })
     }
 
+    function readNetworkConfiguration () {
+      if (configuration.allowCzoneWrite !== true || networkBusy) return
+      setNetworkBusy(true)
+      setMessage('')
+      setError('')
+      fetch('/plugins/signalk-czone/configuration/network/read', {
+        method: 'POST',
+        credentials: 'same-origin'
+      }).then(function (response) {
+        return response.text().then(function (body) {
+          var data
+          try { data = JSON.parse(body) } catch (_) { data = null }
+          if (!response.ok) throw new Error(data && data.error ? data.error : body || ('HTTP ' + response.status))
+          return data || {}
+        })
+      }).then(function (data) {
+        setNetworkRead({ status: data.status || 'reading', startedAt: data.startedAt, message: data.message })
+        setMessage('CZone network configuration read started.')
+      }).catch(function (err) {
+        setError(err && err.message ? err.message : String(err))
+      }).finally(function () { setNetworkBusy(false) })
+    }
+
+    React.useEffect(function () {
+      if (!configuration.allowCzoneWrite) {
+        setNetworkRead(null)
+        return undefined
+      }
+      var active = true
+      function poll () {
+        fetch('/plugins/signalk-czone/configuration/network/status', { credentials: 'same-origin' })
+          .then(function (response) { return response.ok ? response.json() : null })
+          .then(function (data) {
+            if (active && data && data.read) setNetworkRead(data.read)
+          })
+          .catch(function () {})
+      }
+      poll()
+      var timer = setInterval(poll, 2000)
+      return function () { active = false; clearInterval(timer) }
+    }, [configuration.allowCzoneWrite])
+
     var tabButtonStyle = function (active) {
       return { marginRight: 6, padding: '5px 10px', fontWeight: active ? 'bold' : 'normal' }
     }
@@ -267,11 +315,17 @@ var signalk_czone = (function () {
             React.createElement('button', {
               type: 'button',
               disabled: busy || configuration.allowCzoneWrite !== true,
-              onClick: function () {}
-            }, 'Read CZone configuration from network'),
+              onClick: readNetworkConfiguration
+            }, networkBusy ? 'Reading CZone configuration…' : 'Read CZone configuration from network'),
             configuration.allowCzoneWrite !== true
               ? React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Enable CZone read/write control before reading configuration from the network. Reading the configuration requires sending a request to the CZone network.')
-              : React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Network configuration reading will be available when the CZone network read path is enabled.')
+              : React.createElement('div', { style: { marginTop: 6, fontSize: 12 } },
+                networkRead && networkRead.status === 'complete'
+                  ? (networkRead.message || 'CZone network configuration read complete.')
+                  : networkRead && networkRead.status === 'failed'
+                    ? ('Network configuration read failed: ' + (networkRead.message || 'unknown error'))
+                    : 'Reading the configuration requires sending a request and acknowledging the CZone network data blocks.'
+              )
           )
         ),
         React.createElement('label', null,
