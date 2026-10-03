@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071321">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="apple-touch-icon" href="icon.png">
+  <title>CZone Circuits</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #06101d;
+      --panel: #0b1a2b;
+      --panel-2: #0f2237;
+      --panel-3: #122a43;
+      --line: rgba(148, 193, 235, .15);
+      --text: #edf6ff;
+      --muted: #8fa7be;
+      --blue: #38a9ff;
+      --cyan: #18d5e8;
+      --green: #31d58a;
+      --amber: #ffc34d;
+      --purple: #bd78ff;
+      --red: #ff6b7d;
+      --shadow: 0 18px 45px rgba(0,0,0,.28);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: radial-gradient(circle at 70% -10%, #123152 0, var(--bg) 42%); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { overflow-x: hidden; }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .app { display: grid; grid-template-columns: 250px minmax(0, 1fr) 285px; min-height: 100vh; }
+    .leftwell { display: contents; }
+    .sidebar { grid-column:1; grid-row:1; }
+    .main { grid-column:2; grid-row:1; }
+    .rightbar { grid-column:3; grid-row:1; }
+    .sidebar, .rightbar { background: rgba(5, 16, 29, .78); backdrop-filter: blur(18px); border-color: var(--line); }
+    .sidebar { border-right: 1px solid var(--line); padding: 22px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+    .rightbar { border-left: 1px solid var(--line); padding: 22px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+    .brand { display:flex; align-items:center; gap:11px; padding: 2px 10px 25px; }
+    .brand-mark { width:38px; height:38px; display:block; object-fit:contain; border-radius:10px; box-shadow: 0 8px 25px rgba(31,154,255,.24); }
+    .brand strong { display:block; font-size:17px; letter-spacing:.2px; }
+    .brand span { color:var(--muted); font-size:12px; }
+    .nav { display:grid; gap:5px; }
+    .nav button, .category-nav button { width:100%; border:0; background:transparent; padding:10px 11px; border-radius:11px; display:flex; align-items:center; gap:11px; text-align:left; cursor:pointer; color:#c6d6e7; }
+    .nav button:hover, .category-nav button:hover { background: rgba(55,143,215,.12); }
+    .nav button.active { background: linear-gradient(90deg, rgba(21,139,229,.30), rgba(21,139,229,.10)); color:white; }
+    .nav-icon { width:22px; text-align:center; opacity:.95; }
+    .nav-count { margin-left:auto; color:var(--muted); font-size:12px; }
+    .separator { height:1px; background:var(--line); margin:16px 7px; }
+    .section-label { color:#7891aa; font-size:11px; text-transform:uppercase; letter-spacing:1.2px; padding: 0 10px 8px; }
+    .category-nav { display:grid; grid-template-columns:1fr; gap:8px; }
+    .category-nav .category-card { width:100%; min-height:64px; padding:10px; border-radius:14px; }
+    .category-nav .category-card .cat-icon { width:34px; height:34px; border-radius:10px; font-size:17px; flex:0 0 34px; }
+    .category-nav .category-card strong { font-size:12px; }
+    .category-nav .category-card span { font-size:10px; }
+    .category-nav .category-card.active { background:linear-gradient(145deg,rgba(20,104,168,.42),rgba(10,38,62,.94)); border-color:rgba(38,188,255,.65); box-shadow:inset 0 0 0 1px rgba(38,188,255,.14); }
+    .main { min-width:0; padding: 24px 20px 42px; }
+    .hero { min-height:154px; border:1px solid var(--line); border-radius:22px; padding:27px 28px; position:relative; overflow:hidden; background-image: linear-gradient(90deg, rgba(5,20,36,.96) 0%, rgba(7,25,43,.84) 45%, rgba(7,25,43,.38) 100%), url('hero-bg.jpg'); background-size:cover; background-position:center; box-shadow:var(--shadow); }
+    .hero:after { content:""; position:absolute; inset:0; background:linear-gradient(180deg, rgba(4,16,29,.12), rgba(4,16,29,.32)); pointer-events:none; }
+    .hero h1, .hero p { position:relative; z-index:1; }
+    .hero h1 { margin:0; font-size:30px; line-height:1.15; letter-spacing:-.7px; }
+    .hero p { margin:9px 0 0; color:#a9c2d9; font-size:14px; }
+    .search { position:relative; }
+    .search input { width:100%; border:1px solid var(--line); background:#0b1d30; color:white; border-radius:999px; padding:11px 15px 11px 38px; outline:none; }
+    .search input:focus { border-color:rgba(56,169,255,.65); box-shadow:0 0 0 3px rgba(56,169,255,.10); }
+    .search span { position:absolute; left:14px; top:9px; color:#7895ad; }
+    .category-card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(145deg,rgba(18,45,70,.88),rgba(10,28,46,.88)); padding:13px; cursor:pointer; min-height:70px; display:flex; align-items:center; gap:11px; }
+    .category-card:hover { transform:translateY(-1px); border-color:rgba(71,171,238,.42); }
+    .category-card.active { border-color:rgba(38,188,255,.65); box-shadow:inset 0 0 0 1px rgba(38,188,255,.14); }
+    .cat-icon { width:38px; height:38px; border-radius:12px; display:grid; place-items:center; background:color-mix(in srgb, var(--cat) 16%, transparent); color:var(--cat); font-size:19px; }
+    .category-card strong { font-size:13px; display:block; }
+    .category-card span { color:var(--muted); font-size:11px; }
+    .section { border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:rgba(8,24,40,.78); box-shadow:var(--shadow); }
+    .section-head { padding:15px 17px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--line); }
+    .section-head h2 { margin:0; font-size:18px; letter-spacing:-.2px; }
+    .section-head .subtle { color:var(--muted); font-size:12px; }
+    .section-head .search { margin-left:auto; flex:0 1 280px; min-width:180px; max-width:280px; }
+    .section-head .sort { margin-left:0; flex:0 0 auto; background:#0c2135; border:1px solid var(--line); color:#cbdbea; border-radius:9px; padding:7px 9px; }
+    .circuit { display:grid; grid-template-columns:36px minmax(150px,1.5fr) minmax(120px,1fr) minmax(120px,1fr) 30px; gap:10px; align-items:center; padding:13px 15px; border-bottom:1px solid rgba(148,193,235,.10); min-height:76px; }
+    .circuit:last-child { border-bottom:0; }
+    .circuit:hover { background:rgba(44,115,170,.07); }
+    .fav { border:0; background:transparent; cursor:pointer; color:#7890a6; font-size:18px; padding:4px; }
+    .fav.on { color:#ffc34d; text-shadow:0 0 12px rgba(255,195,77,.25); }
+    .circuit-name { min-width:0; }
+    .circuit-name strong { display:block; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .circuit-name small { display:block; color:#738ca4; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tags { display:flex; flex-wrap:wrap; gap:4px; }
+    .tag { font-size:10px; padding:4px 7px; border-radius:999px; background:#152d44; color:#bdd1e3; }
+    .tag.cat { background:color-mix(in srgb, var(--cat) 14%, #10263b); color:color-mix(in srgb, var(--cat) 82%, white); }
+    .status { display:flex; align-items:center; gap:7px; font-size:11px; color:#a7bdd1; }
+    .status-dot { width:8px; height:8px; border-radius:50%; background:#6c8399; }
+    .status.on { color:#64e4aa; }
+    .status.on .status-dot { background:var(--green); box-shadow:0 0 12px rgba(49,213,138,.7); }
+    .control { display:flex; align-items:center; gap:9px; justify-content:flex-end; }
+    .toggle { min-width:78px; min-height:42px; padding:9px 15px; border:1px solid rgba(148,193,235,.22); border-radius:12px; background:#172b40; cursor:pointer; transition:background .14s, border-color .14s, transform .08s, opacity .14s; font-weight:750; letter-spacing:.5px; touch-action:manipulation; -webkit-tap-highlight-color:transparent; user-select:none; }
+    .toggle:hover { filter:brightness(1.12); }
+    .toggle:active { transform:translateY(1px); }
+    .toggle.pending { opacity:.72; cursor:wait; box-shadow:0 0 0 3px rgba(84,199,255,.18); }
+    .toggle:disabled { cursor:wait; }
+    .sending { color:#54c7ff; font-size:10px; margin-left:5px; }
+    .toggle.on { background:linear-gradient(135deg,#1cbd78,#168d5b); border-color:rgba(100,228,170,.55); color:#fff; }
+    .toggle.off { background:#172b40; color:#c4d4e3; }
+    .toggle.pending.on { background:linear-gradient(135deg,#249c70,#197d59); }
+    .range-wrap { display:flex; align-items:center; gap:8px; min-width:135px; }
+    input[type=range] { accent-color:#38a9ff; width:100%; cursor:pointer; }
+    .percent { min-width:38px; text-align:right; font-size:11px; color:#c3d7e8; }
+    .arrow { color:#59738b; font-size:19px; }
+    .empty { padding:42px 20px; text-align:center; color:var(--muted); }
+    .right-card { border:1px solid var(--line); border-radius:16px; background:rgba(10,29,47,.72); padding:16px; margin-bottom:13px; }
+    .right-card h3 { margin:0 0 15px; font-size:15px; }
+    .mode-grid { display:grid; gap:8px; }
+    .mode-button { width:100%; border:1px solid var(--line); background:#0c2135; border-radius:12px; padding:12px 13px; cursor:pointer; text-align:left; transition:background .14s, border-color .14s, transform .08s, opacity .14s; }
+    .mode-button:hover { border-color:rgba(56,169,255,.45); }
+    .mode-button:active { transform:translateY(1px); }
+    .mode-button.active { background:linear-gradient(135deg,#168eea,#2164b8); border-color:rgba(87,199,255,.65); color:white; box-shadow:0 7px 22px rgba(20,130,224,.18); }
+    .mode-button.pending { opacity:.72; cursor:wait; box-shadow:0 0 0 3px rgba(84,199,255,.14); }
+    .mode-name { display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:750; }
+    .mode-state { color:var(--muted); font-size:10px; margin-top:4px; }
+    .mode-button.active .mode-state { color:#d8f3ff; }
+    .stat { display:flex; align-items:center; gap:11px; padding:8px 0; }
+    .stat-icon { width:30px; height:30px; display:grid; place-items:center; border-radius:10px; background:#142e45; }
+    .stat strong { display:block; font-size:17px; }
+    .stat span { display:block; color:var(--muted); font-size:11px; }
+    .connection { display:flex; justify-content:flex-end; align-items:center; gap:7px; color:#8fa7be; font-size:11px; padding:0 4px 12px; }
+    .connection i { width:8px; height:8px; border-radius:50%; background:#ffb84d; }
+    .connection.ok i { background:var(--green); box-shadow:0 0 10px rgba(49,213,138,.6); }
+    .mobile-menu { display:none; }
+    /* Responsive layout: keep every panel visible as the viewport narrows.
+       Wide: three columns. Medium: the former right well moves beneath the left well.
+       Narrow: navigation/status stack above the circuit list. */
+    @media (max-width: 1180px) {
+      /* Medium screens: the left navigation and status/actions are one independent
+         scrolling column. The circuit area remains in its own document column. */
+      .app { grid-template-columns:215px minmax(0,1fr); align-items:stretch; }
+      .leftwell { grid-column:1; grid-row:1; display:flex; flex-direction:column; min-height:100vh; height:100vh; position:sticky; top:0; overflow-y:auto; overflow-x:hidden; scrollbar-gutter:stable; }
+      .sidebar { position:static; height:auto; overflow:visible; flex:0 0 auto; }
+      .rightbar { position:static; height:auto; overflow:visible; flex:0 0 auto; border-left:0; border-right:1px solid var(--line); padding:0 16px 22px; }
+      .main { grid-column:2; grid-row:1; min-height:100vh; }
+      .right-card:last-child { margin-bottom:0; }
+    }
+    @media (max-width: 780px) {
+      /* Super-narrow screens use a deliberate top-to-bottom workflow:
+         branding -> hero -> modes -> filters -> circuits -> status.  The
+         wrappers become transparent so the major pieces can be ordered
+         independently without changing the desktop/medium structure. */
+      .app { display:grid; grid-template-columns:minmax(0,1fr); align-items:stretch; }
+      .leftwell, .sidebar, .rightbar, .main { display:contents; }
+      .brand { grid-column:1; order:1; padding:10px 22px 0; }
+      .hero { grid-column:1; order:2; margin:12px 12px 0; padding:21px; }
+      .hero h1 { font-size:25px; }
+      .modes-card { grid-column:1; order:3; margin:12px 12px 0; }
+      .nav { grid-column:1; order:4; display:grid; margin:12px 12px 0; }
+      .sidebar > .separator:nth-of-type(3) { grid-column:1; order:5; margin:10px 19px 8px; }
+      .section-label { grid-column:1; order:6; margin:0 12px; }
+      .category-nav { grid-column:1; order:7; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin:0 12px; }
+      .sidebar > .separator:nth-of-type(6) { grid-column:1; order:8; margin:10px 19px 0; }
+      .section { grid-column:1; order:9; margin:12px 12px 0; }
+      .overview-card { grid-column:1; order:10; margin:12px 12px 0; }
+      .rightbar > .right-card:last-child { grid-column:1; order:11; margin:12px 12px 12px; }
+      .main > .connection { display:none; }
+      .category-nav .category-card { min-height:58px; padding:9px; }
+      .category-nav .category-card .cat-icon { width:30px; height:30px; flex-basis:30px; }
+      .section-head { flex-wrap:wrap; }
+      .section-head .search { margin-left:auto; flex:1 1 180px; min-width:180px; max-width:none; }
+      .section-head .sort { margin-left:auto; }
+      .circuit { grid-template-columns:30px minmax(0,1fr) auto; }
+      .tags { display:none; }
+      .status { display:none; }
+      .control { grid-column:2 / 4; justify-content:stretch; }
+      .range-wrap { flex:1; }
+    }
+
+    @media (min-width: 781px) and (max-width: 1180px) {
+      /* Medium widths have less horizontal room for the decorative ACTIVE
+         label. Let long mode names use the full button width and wrap safely. */
+      .mode-name { min-width:0; }
+      .mode-name > span:first-child { min-width:0; overflow-wrap:anywhere; }
+      .mode-name > span:last-child { display:none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="leftwell">
+    <aside class="sidebar">
+      <div class="brand"><img class="brand-mark" src="icon.png" alt="CZone" width="38" height="38"><div><strong>CZone</strong><span>Boat Systems</span></div></div>
+      <div class="nav" id="mainNav"></div>
+      <div class="separator"></div>
+      <div class="section-label">Categories</div>
+      <div class="category-nav" id="categoryNav"></div>
+      <div class="separator"></div>
+    </aside>
+
+    <aside class="rightbar">
+      <div class="right-card modes-card"><h3>Modes</h3><div id="modes" class="mode-grid"></div></div>
+      <div class="right-card overview-card"><h3>System Overview</h3><div id="stats"></div></div>
+      <div class="right-card"><h3>Connection</h3><div id="connectionCard"></div></div>
+    </aside>
+    </div>
+
+    <main class="main">
+      <div class="connection" id="connection"><i></i><span>Connecting to Signal K…</span></div>
+      <section class="hero">
+        <h1 id="heroTitle">Your Boat, Your Circuits</h1>
+        <p>Monitor and control your boat's electrical systems.</p><div id="writeGate" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid rgba(255,195,77,.35);border-radius:10px;background:rgba(255,195,77,.08);color:#ffd98a;font-size:12px;line-height:1.5"></div>
+      </section>
+      <section class="section">
+        <div class="section-head"><span id="sectionIcon">⚡</span><div><h2 id="sectionTitle">All Circuits</h2><span class="subtle" id="sectionCount"></span></div><label class="search"><span>⌕</span><input id="search" type="search" placeholder="Search circuits…" autocomplete="off"></label><select class="sort" id="sort"><option value="name">A–Z</option><option value="state">In Use</option><option value="brightness">Brightness</option></select></div>
+        <div id="circuits"></div>
+      </section>
+    </main>
+
+  </div>
+<script>
+(() => {
+  const API = '/plugins/signalk-czone';
+  const SK = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/signalk/v1/stream?subscribe=none`;
+  const categoryIcons = { Lighting:'💡', Navigation:'◉', Pumps:'♨', Power:'⚡', Entertainment:'♫', 'Fans/Ventilation':'✣', Electronics:'▦', Climate:'❄', Galley:'🍴', 'Deck Equipment':'⚓', Safety:'⬟', Miscellaneous:'•••' };
+  const categoryColors = { Lighting:'#ffc34d', Navigation:'#54c7ff', Pumps:'#27d7d5', Power:'#b877ff', Entertainment:'#ee66d9', 'Fans/Ventilation':'#3ee0c5', Electronics:'#35b7ff', Climate:'#6cc8ff', Galley:'#ff9f58', 'Deck Equipment':'#3fc1d9', Safety:'#ff6576', Miscellaneous:'#8ea0b6' };
+  let circuits = [], status = {}, modes = [], activeMode = null, vesselName = '', view = 'all', category = null, query = '', sort = 'name', socket = null;
+  let socketReconnectTimer = null, watchdogTimer = null, lastSocketUpdateAt = 0, socketConnected = false;
+  const WS_WATCHDOG_MS = 120000;
+  const COMMAND_CONFIRM_MS = 15000;
+  const COMMAND_RECONCILE_DELAY_MS = 200;
+  const COMMAND_RECONCILE_INTERVAL_MS = 250;
+  const COMMAND_RECONCILE_ATTEMPTS = 12;
+  const pending = new Map();
+  let modePending = null;
+  const favoritesKey = 'signalk-czone-circuits:favorites';
+  let favorites = new Set(JSON.parse(localStorage.getItem(favoritesKey) || '[]'));
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const nameKey = c => c.slug || c.name;
+  const stateOf = c => c.state && c.state.state === 'ON';
+  const percentOf = c => c.state && Number.isFinite(c.state.percent) ? c.state.percent : null;
+  const catList = () => [...new Set(circuits.flatMap(c => c.subCategories || []))].sort((a,b) => a.localeCompare(b));
+  const countCat = cat => circuits.filter(c => (c.subCategories || []).includes(cat)).length;
+  const activeCount = () => circuits.filter(stateOf).length;
+  const masterCount = m => circuits.filter(c => c.masterCategory === m).length;
+  const icon = c => categoryIcons[c] || '•';
+  const color = c => categoryColors[c] || '#4bb5ff';
+
+  function saveFavorites() { localStorage.setItem(favoritesKey, JSON.stringify([...favorites])); }
+  function setView(v) { view=v; category=null; render(); }
+  function setCategory(c) { category=c; view='category'; render(); }
+  window.setView = setView; window.setCategory = setCategory;
+
+  function renderNav() {
+    const items = [
+      ['all','⌂','All Circuits',circuits.length], ['inuse','●','In Use',activeCount()], ['favorites','☆','Favorites',circuits.filter(c=>favorites.has(nameKey(c))).length],
+      ['ac','♆','AC',masterCount('AC')], ['dc','▣','DC',masterCount('DC')]
+    ];
+    document.querySelector('#mainNav').innerHTML = items.map(([v,i,t,n]) => `<button class="${view===v && !category?'active':''}" onclick="setView('${v}')"><span class="nav-icon">${i}</span>${t}<span class="nav-count">${n}</span></button>`).join('');
+  }
+
+  function renderCategories() {
+    const cats = catList();
+    const el = document.querySelector('#categoryNav');
+    if (!el) return;
+    el.innerHTML = cats.map(c => `<button class="category-card ${category===c?'active':''}" style="--cat:${color(c)}" onclick="setCategory('${esc(c).replace(/'/g,"\\'")}')"><div class="cat-icon">${icon(c)}</div><div><strong>${esc(c)}</strong><span>${countCat(c)} circuits</span></div></button>`).join('');
+  }
+
+  function currentList() {
+    let list = circuits.filter(c => {
+      if (view==='inuse' && !stateOf(c)) return false;
+      if (view==='favorites' && !favorites.has(nameKey(c))) return false;
+      if (view==='ac' && c.masterCategory!=='AC') return false;
+      if (view==='dc' && c.masterCategory!=='DC') return false;
+      if (category && !(c.subCategories || []).includes(category)) return false;
+      if (query && !(`${c.name} ${(c.subCategories||[]).join(' ')} ${c.masterCategory||''}`.toLowerCase().includes(query.toLowerCase()))) return false;
+      return true;
+    });
+    list.sort((a,b) => sort==='state' ? Number(stateOf(b))-Number(stateOf(a)) || a.name.localeCompare(b.name) : sort==='brightness' ? (percentOf(b)||0)-(percentOf(a)||0) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name));
+    return list;
+  }
+
+  function renderCircuits() {
+    const list = currentList();
+    const title = category || ({all:'All Circuits',inuse:'In Use',favorites:'Favorites',ac:'AC Circuits',dc:'DC Circuits',search:'Search Results'}[view] || 'Circuits');
+    document.querySelector('#sectionTitle').textContent = title;
+    document.querySelector('#sectionCount').textContent = `${list.length} circuit${list.length===1?'':'s'}`;
+    document.querySelector('#sectionIcon').textContent = category ? icon(category) : view==='favorites' ? '☆' : view==='inuse' ? '●' : '⚡';
+    document.querySelector('#circuits').innerHTML = list.length ? list.map(circuitRow).join('') : `<div class="empty">No circuits match this view.</div>`;
+  }
+
+  function circuitRow(c) {
+    const on = stateOf(c), pct = percentOf(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = favorites.has(nameKey(c));
+    const p = pending.get(nameKey(c));
+    const cats = (c.subCategories || []).slice(0,3).map(x => `<span class="tag cat" style="--cat:${color(x)}">${esc(x)}</span>`).join('');
+    const disabled = p && p.kind === 'state';
+    const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on?'ON':'OFF')}</button>`;
+    const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
+    const sending = p ? `<span class="sending">Sending…</span>` : '';
+    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}</strong><small>${esc(c.masterCategory || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><span class="arrow">›</span></div>`;
+  }
+
+  function previewPercent(el) { const out=el.parentElement.querySelector('.percent'); out.textContent=el.value+'%'; }
+  window.previewPercent = previewPercent;
+
+  function circuitBySlug(slug) { return circuits.find(c => c.slug === slug); }
+  function setPending(c, kind, requested, previous) {
+    const key = nameKey(c);
+    const timer = setTimeout(() => {
+      const p = pending.get(key);
+      if (!p || p.timer !== timer) return;
+      console.debug('[CZone UI] command confirmation timeout', c.name, requested);
+      pending.delete(key);
+      refreshOnce('command-timeout');
+      render();
+    }, COMMAND_CONFIRM_MS);
+    pending.set(key, { kind, requested, previous, timer, reconcileTimer: null, reconcileAttempts: 0 });
+  }
+
+  function stopPendingTimers(p) {
+    if (!p) return;
+    clearTimeout(p.timer);
+    if (p.reconcileTimer) clearTimeout(p.reconcileTimer);
+  }
+
+  async function reconcilePendingState(c) {
+    const key = nameKey(c);
+    const p = pending.get(key);
+    if (!p || p.kind !== 'state') return;
+    if (p.reconcileAttempts >= COMMAND_RECONCILE_ATTEMPTS) {
+      console.debug('[CZone UI] REST reconciliation exhausted', c.name, p.requested);
+      return;
+    }
+    p.reconcileAttempts += 1;
+    try {
+      const r = await fetch(`${API}/circuits/${encodeURIComponent(c.name)}/state`, { cache:'no-store', credentials:'include' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      const observed = data.state && data.state.state;
+      console.debug('[CZone UI] REST reconciliation', c.name, 'observed=', observed, 'requested=', p.requested, 'attempt=', p.reconcileAttempts);
+      if (observed === p.requested) {
+        c.state = c.state || {};
+        c.state.state = observed;
+        clearPending(c, 'state', observed);
+        render();
+        return;
+      }
+    } catch (err) {
+      console.debug('[CZone UI] REST reconciliation error', c.name, err.message);
+    }
+    const current = pending.get(key);
+    if (!current || current !== p) return;
+    current.reconcileTimer = setTimeout(() => { reconcilePendingState(c); }, COMMAND_RECONCILE_INTERVAL_MS);
+  }
+
+  function startPendingReconciliation(c, kind) {
+    if (kind !== 'state') return;
+    const p = pending.get(nameKey(c));
+    if (!p) return;
+    p.reconcileTimer = setTimeout(() => { reconcilePendingState(c); }, COMMAND_RECONCILE_DELAY_MS);
+  }
+  function clearPending(c, kind, observed) {
+    const key = nameKey(c), p = pending.get(key);
+    if (!p || p.kind !== kind) return;
+    const confirmed = kind === 'state' ? observed === p.requested : Math.round(observed) === Math.round(p.requested);
+    stopPendingTimers(p);
+    if (!confirmed) {
+      // CZone disagreed with the optimistic request. The observed WebSocket
+      // value is authoritative, so keep it and stop showing Sending.
+      if (kind === 'state') c.state.state = observed;
+      else c.state.percent = observed;
+    }
+    pending.delete(key);
+  }
+  function rollbackPending(c, kind) {
+    const key = nameKey(c), p = pending.get(key);
+    if (!p || p.kind !== kind) return;
+    stopPendingTimers(p);
+    if (kind === 'state') c.state.state = p.previous;
+    else c.state.percent = p.previous;
+    pending.delete(key);
+  }
+  function applySocketValue(path, value, source, timestamp) {
+    if (path === 'name') {
+      const nextName = typeof value === 'string' ? value.trim() : '';
+      if (nextName && nextName !== vesselName) { vesselName = nextName; renderHero(); return true; }
+      return false;
+    }
+    if (path === 'electrical.czone.mode.active') {
+      const mode = modes.find(m => m.slug === value || m.name === value);
+      console.debug('[CZone WS] MODE', value, 'matched=', !!mode, 'source=', source ? JSON.stringify(source) : 'none', 'timestamp=', timestamp || 'none');
+      if (mode) {
+        activeMode = mode;
+        if (modePending && modePending.slug === mode.slug) modePending = null;
+        else if (modePending) { modePending = null; }
+        return true;
+      }
+      return false;
+    }
+    const m = /^electrical\.czone\.([^\.]+)\.switch\.(state|brightness)$/.exec(path || '');
+    if (!m) return false;
+    const c = circuitBySlug(m[1]);
+    if (!c) { console.debug('[CZone WS] unmatched circuit path', path, value); return false; }
+    c.state = c.state || {};
+    const sourceLabel = source && (source.label || source.type || source.src) ? JSON.stringify(source) : 'none';
+    if (m[2] === 'state') {
+      const observed = value === true || value === 1 || value === 'ON' || value === 'on';
+      const observedState = observed ? 'ON' : 'OFF';
+      const p = pending.get(nameKey(c));
+      console.debug('[CZone WS] STATE', c.name, observedState, 'raw=', value, 'source=', sourceLabel, 'timestamp=', timestamp || 'none', p ? `pending=${p.requested}` : 'pending=none');
+      // A command is optimistic until CZone confirms it. Do not let a stale
+      // conflicting WebSocket value immediately undo the user's click.
+      if (p && p.kind === 'state' && observedState !== p.requested) {
+        console.debug('[CZone WS] STATE ignored while pending', c.name, 'observed=', observedState, 'requested=', p.requested);
+        return true;
+      }
+      c.state.state = observedState;
+      const wasPending = !!p;
+      clearPending(c, 'state', observedState);
+      if (wasPending) console.debug('[CZone UI] STATE CONFIRMED via WebSocket', c.name, observedState);
+    } else {
+      const observed = Math.round(Number(value) * 100);
+      if (!Number.isFinite(observed)) { console.debug('[CZone WS] invalid brightness', c.name, value); return false; }
+      console.debug('[CZone WS] BRIGHTNESS', c.name, observed + '%', 'raw=', value);
+      c.state.percent = observed;
+      clearPending(c, 'brightness', observed);
+    }
+    return true;
+  }
+
+  function mergeRest(data) {
+    const incoming = data.circuits || [];
+    if (!circuits.length) circuits = incoming;
+    else {
+      const bySlug = new Map(incoming.map(c => [c.slug, c]));
+      circuits = circuits.map(c => {
+        const fresh = bySlug.get(c.slug);
+        if (!fresh) return c;
+        const p = pending.get(nameKey(c));
+        return { ...fresh, state: p ? c.state : (fresh.state || c.state) };
+      });
+    }
+    status = data;
+    if (Array.isArray(data.modes)) modes = data.modes;
+    if (data.activeMode) activeMode = data.activeMode;
+  }
+  async function refreshOnce(reason = 'manual') {
+    try {
+      const r = await fetch(`${API}/circuits`, { cache:'no-store', credentials:'include' });
+      if (!r.ok) throw new Error('Signal K plugin unavailable (HTTP ' + r.status + ')');
+      const data = await r.json();
+      const incoming = Array.isArray(data.circuits) ? data.circuits : [];
+      console.debug('[CZone UI] REST refresh', reason, { circuits: incoming.length, modes: Array.isArray(data.modes) ? data.modes.length : 0, sendingEnabled: data.sendingEnabled === true, nmeaReady: data.nmeaReady === true });
+      mergeRest(data);
+      if (incoming.length === 0) throw new Error('CZone plugin returned an empty circuit list');
+      document.querySelector('#connection').classList.add('ok');
+      document.querySelector('#connection').innerHTML = '<i></i><span>Connected · live circuit data</span>';
+      render();
+      return true;
+    } catch (e) {
+      console.warn('[CZone UI] REST refresh failed', reason, e);
+      document.querySelector('#connection').classList.remove('ok');
+      document.querySelector('#connection').innerHTML = '<i></i><span>Waiting for Signal K…</span>';
+      return false;
+    }
+  }
+
+  async function refreshVesselName() {
+    try {
+      const r = await fetch('/signalk/v1/api/vessels/self/name', { cache:'no-store', credentials:'include' });
+      if (!r.ok) return;
+      const data = await r.json();
+      const nextName = typeof data === 'string' ? data.trim() : (typeof data.value === 'string' ? data.value.trim() : '');
+      if (nextName) { vesselName = nextName; renderHero(); }
+    } catch (_) {}
+  }
+
+  async function post(path, body, circuit, kind, requested, previous) {
+    setPending(circuit, kind, requested, previous);
+    render();
+    try {
+      const r = await fetch(`${API}${path}`, { method:'POST', credentials:'include', headers: body ? {'Content-Type':'application/json'} : undefined, body: body ? JSON.stringify(body) : undefined });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Command failed');
+      // HTTP 200 means the command was accepted by Signal K. CZone confirmation
+      // normally comes from the WebSocket delta. A short, command-only REST
+      // reconciliation is a fallback in case the browser misses that delta; it
+      // does not run while idle and does not replace the server-side cache.
+      console.debug('[CZone UI] command accepted', circuit.name, kind, requested, 'WebSocket confirmation pending');
+      startPendingReconciliation(circuit, kind);
+      render();
+    } catch (e) {
+      rollbackPending(circuit, kind);
+      render();
+      alert(e.message);
+    }
+  }
+  window.toggleCircuit = (name, on) => {
+    if (status.sendingEnabled !== true) { alert('CZone write control is disabled. Enable “Enable CZone read/write control” in Plugin Config first.'); return; }
+    const c = circuits.find(x => x.name === decodeURIComponent(name)); if (!c) return;
+    const existing = pending.get(nameKey(c));
+    if (existing && existing.kind === 'state') { console.debug('[CZone UI] duplicate state click ignored', c.name); return; }
+    c.state = c.state || {};
+    const previous = c.state.state || 'OFF';
+    c.state.state = on ? 'ON' : 'OFF';
+    post(`/circuits/${name}/${on?'on':'off'}`, null, c, 'state', on ? 'ON' : 'OFF', previous);
+  };
+  window.setLevel = (name, value) => {
+    if (status.sendingEnabled !== true) { alert('CZone write control is disabled. Enable “Enable CZone read/write control” in Plugin Config first.'); return; }
+    const c = circuits.find(x => x.name === decodeURIComponent(name)); if (!c) return;
+    c.state = c.state || {};
+    const requested = Math.max(10, Number(value));
+    const previous = Number.isFinite(c.state.percent) ? c.state.percent : 100;
+    c.state.percent = requested;
+    post(`/circuits/${name}/level`, { percent: requested }, c, 'brightness', requested, previous);
+  };
+  window.toggleFavorite = key => { favorites.has(key) ? favorites.delete(key) : favorites.add(key); saveFavorites(); render(); };
+
+  function renderModes() {
+    const el = document.querySelector('#modes');
+    if (!el) return;
+    if (!modes.length) { el.innerHTML = '<div class="empty" style="padding:10px 4px">No CZone modes found.</div>'; return; }
+    el.innerHTML = modes.map(m => {
+      const active = activeMode && activeMode.slug === m.slug;
+      const pending = modePending && modePending.slug === m.slug;
+      return `<button type="button" class="mode-button ${active?'active':''} ${modePending?'pending':''}" ${modePending?'disabled':''} onclick="activateMode('${encodeURIComponent(m.slug)}')" aria-busy="${pending?'true':'false'}"><div class="mode-name"><span>${esc(m.name === 'Day Crusing' ? 'Day Cruising' : m.name)}</span><span>${pending?'Sending…':active?'ACTIVE':' '}</span></div><div class="mode-state">${active?'Current operating mode':'Select mode'}</div></button>`;
+    }).join('');
+  }
+
+  window.activateMode = function (slug) {
+    if (status.sendingEnabled !== true) { alert('CZone write control is disabled. Enable “Enable CZone read/write control” in Plugin Config first.'); return; }
+    const decoded = decodeURIComponent(slug);
+    const mode = modes.find(m => m.slug === decoded);
+    if (!mode || modePending) return;
+    const previous = activeMode;
+    activeMode = mode;
+    modePending = { slug: mode.slug, previous: previous };
+    renderModes();
+    fetch(`${API}/modes/${encodeURIComponent(mode.slug)}/activate`, { method:'POST', credentials:'include' })
+      .then(async r => { const data = await r.json(); if (!r.ok) throw new Error(data.error || 'Mode command failed'); })
+      .catch(err => { activeMode = previous; modePending = null; renderModes(); alert(err.message); });
+  };
+
+  function renderHero() {
+    const name = (vesselName || '').trim();
+    document.querySelector('#heroTitle').textContent = name ? `${name}’s Circuits` : 'Your Boat, Your Circuits';
+    const gate = document.querySelector('#writeGate');
+    if (gate) {
+      const enabled = status.sendingEnabled === true;
+      gate.style.display = enabled ? 'none' : 'block';
+      gate.textContent = enabled ? '' : 'CZone write control is disabled — enable “Enable CZone read/write control” in Plugin Config to use the CZone control interface.';
+    }
+  }
+
+  function renderStats() {
+    const on=activeCount(), total=circuits.length, fav=circuits.filter(c=>favorites.has(nameKey(c))).length;
+    document.querySelector('#stats').innerHTML = `<div class="stat"><div class="stat-icon">⚡</div><div><strong>${total}</strong><span>Total Circuits</span></div></div><div class="stat"><div class="stat-icon">●</div><div><strong>${on}</strong><span>In Use</span></div></div><div class="stat"><div class="stat-icon">○</div><div><strong>${total-on}</strong><span>Off</span></div></div><div class="stat"><div class="stat-icon">★</div><div><strong>${fav}</strong><span>Favorites</span></div></div>`;
+    const n2kReady = status.nmeaReady === true;
+    const readyColor = n2kReady ? '#64e4aa' : '#ffcc77';
+    const readyText = n2kReady ? 'NMEA 2000 output ready' : 'NMEA 2000 output waiting';
+    const lastOut = status.lastNmeaOutput ? `<br><span style="color:#7f97ad">Last command: ${esc(status.lastNmeaOutput.circuit)} · ${esc(status.lastNmeaOutput.description)}</span>` : '';
+    document.querySelector('#connectionCard').innerHTML = `<div style="color:#a9bfd2;font-size:12px;line-height:1.7"><span style="color:${status.sendingEnabled?'#64e4aa':'#ffcc77'}">● NMEA 2000 sending ${status.sendingEnabled?'enabled':'disabled'}</span><br><span style="color:${readyColor}">● ${readyText}</span>${lastOut}</div>`;
+  }
+
+  function render() { renderNav(); renderCategories(); renderCircuits(); renderStats(); renderModes(); renderHero(); }
+
+  document.querySelector('#search').addEventListener('input', e => { query=e.target.value.trim(); view=query?'search':'all'; category=null; render(); });
+  document.querySelector('#sort').addEventListener('change', e => { sort=e.target.value; renderCircuits(); });
+
+  function updateSocketIndicator(text, ok) {
+    const el = document.querySelector('#connection');
+    el.classList.toggle('ok', !!ok);
+    el.innerHTML = `<i></i><span>${text}</span>`;
+  }
+
+  function sendSubscriptions() {
+    if (!socket || socket.readyState !== WebSocket.OPEN || !circuits.length) return;
+    const subscribe = [{ path: 'name', policy: 'instant' }, { path: 'electrical.czone.mode.active', policy: 'instant' }];
+    for (const c of circuits) {
+      subscribe.push({ path: `electrical.czone.${c.slug}.switch.state`, policy: 'instant' });
+      if (c.capabilities && c.capabilities.dimmer) subscribe.push({ path: `electrical.czone.${c.slug}.switch.brightness`, policy: 'instant' });
+    }
+    console.debug('[CZone WS] subscribing to', subscribe.length, 'exact circuit paths');
+    socket.send(JSON.stringify({ context:'vessels.self', subscribe }));
+  }
+
+  function scheduleWatchdog() {
+    clearTimeout(watchdogTimer);
+    const elapsed = lastSocketUpdateAt ? Date.now() - lastSocketUpdateAt : WS_WATCHDOG_MS;
+    const wait = Math.max(1000, WS_WATCHDOG_MS - elapsed);
+    watchdogTimer = setTimeout(async () => {
+      if (!lastSocketUpdateAt || Date.now() - lastSocketUpdateAt >= WS_WATCHDOG_MS) {
+        console.debug('[CZone WS] 120s watchdog fired; REST reconciliation');
+        await refreshOnce('websocket-watchdog');
+        lastSocketUpdateAt = Date.now();
+      }
+      scheduleWatchdog();
+    }, wait);
+  }
+
+  function connectSocket() {
+    if (status.sendingEnabled !== true) { console.debug('[CZone WS] write control disabled; not opening control WebSocket'); return; }
+    if (!('WebSocket' in window)) { console.warn('[CZone WS] WebSocket unavailable'); return; }
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+    try {
+      console.debug('[CZone WS] connecting', SK);
+      socket = new WebSocket(SK);
+      socket.onopen = () => {
+        socketConnected = true;
+        lastSocketUpdateAt = Date.now();
+        updateSocketIndicator('Connected · WebSocket live', true);
+        sendSubscriptions();
+        scheduleWatchdog();
+      };
+      socket.onmessage = ev => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (!msg.updates) return;
+          lastSocketUpdateAt = Date.now();
+          let changed = false;
+          let valuesSeen = 0;
+          let circuitValues = 0;
+          for (const update of msg.updates) {
+            for (const v of (update.values || [])) {
+              valuesSeen++;
+              if (/^electrical\.czone\./.test(v.path || '')) circuitValues++;
+              if (applySocketValue(v.path, v.value, update.source, update.timestamp)) changed = true;
+            }
+          }
+          console.debug('[CZone WS] delta received', { valuesSeen, circuitValues, changed, updateSource: msg.updates.map(u => u.source || null), updateTimestamp: msg.updates.map(u => u.timestamp || null), timestamp: new Date(lastSocketUpdateAt).toISOString() });
+          updateSocketIndicator(circuitValues ? 'Connected · CZone updates live' : 'Connected · WebSocket live', true);
+          scheduleWatchdog();
+          if (changed) render();
+        } catch (e) { console.debug('[CZone WS] message parse error', e); }
+      };
+      socket.onclose = () => {
+        socketConnected = false;
+        updateSocketIndicator('Reconnecting to Signal K…', false);
+        console.warn('[CZone WS] closed; reconnecting');
+        clearTimeout(socketReconnectTimer);
+        socketReconnectTimer = setTimeout(connectSocket, 3000);
+        lastSocketUpdateAt = 0;
+        scheduleWatchdog();
+      };
+      socket.onerror = e => { console.warn('[CZone WS] error', e); try { socket.close(); } catch (_) {} };
+    } catch (e) { console.warn('[CZone WS] connect failed', e); }
+  }
+
+  refreshVesselName();
+  refreshOnce('initial-load').then(() => {
+    if (status.sendingEnabled === true && circuits.length) {
+      connectSocket();
+      sendSubscriptions();
+    } else if (status.sendingEnabled === true) {
+      updateSocketIndicator('CZone circuits not loaded', false);
+    } else {
+      updateSocketIndicator('CZone control disabled · no control WebSocket', false);
+      render();
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
