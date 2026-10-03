@@ -43,6 +43,12 @@ async function main () {
   assert.strictEqual(testBench.modules.length, 4)
   assert(testBench.modules.some(m => m.module === 0x10 && m.name === 'Display'))
   assert(testBench.modules.find(m => m.module === 0x10).rawNameLength === 0x87)
+  const selCitron = await loadCanonicalFixture('Sel-Citron-02.04.25.zcf')
+  const bilgeBuzzer = selCitron.circuits.find(c => c.name === 'Bilge Buzzer - Port')
+  assert(bilgeBuzzer, 'Sel Citron: Bilge Buzzer - Port must be present')
+  assert(bilgeBuzzer.subCategories.includes('Alarms'), 'Sel Citron: Bilge Buzzer - Port must decode Alarms')
+  assert.strictEqual(bilgeBuzzer.zcf.category.unknownSubCategoryBits & 0x00800000, 0)
+
   const sugar = await loadCanonicalFixture('SugarShack-20260927-01.zcf')
   for (const [module, name] of [[0x1d, 'B&G PortHelm'], [0x07, 'B&G Screen'], [0x27, 'B&G StbdHelm'], [0xf8, 'ACOI 01 Stbd Aft'], [0x80, 'STBD Helm KeyPad']]) {
     assert(sugar.modules.some(m => m.module === module && m.name === name), 'Sugar Shack module 0x' + module.toString(16) + ' ' + name + ' must be parsed')
