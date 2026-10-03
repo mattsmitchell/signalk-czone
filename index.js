@@ -540,7 +540,6 @@ module.exports = function (app) {
     if (packet.payload[0] !== 0x27 || packet.payload[1] !== 0x99) return
     const module = packet.payload[2]
     const page = packet.payload[3]
-    decodeCurrentPacket(packet)
     log(`CZone LEVEL IN: PGN 130822 src=${packet.source} module=0x${module.toString(16).padStart(2, '0')} page=${page} payload=${packet.payload.toString('hex').toUpperCase()}`)
     for (let slot = 0; slot < 8; slot++) {
       const i = 4 + slot * 3
@@ -1039,7 +1038,10 @@ module.exports = function (app) {
       }
 
       if (typeof app.on === 'function') {
-        reassembler = nmea.createFastPacketReassembler(packet => decodeDcStatePacket(packet))
+        reassembler = nmea.createFastPacketReassembler(packet => {
+          decodeCurrentPacket(packet)
+          if (packet.pgn === CURRENT_PGN_DC) decodeDcStatePacket(packet)
+        })
         rawListener = handleRawFrame
         app.on('canboatjs:rawoutput', rawListener)
       }
