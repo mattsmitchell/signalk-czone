@@ -488,11 +488,59 @@ module.exports = function (app) {
     return { state: 'UNKNOWN', percent: null }
   }
 
+  const CURRENT_PGN_DC = 130822
+  const CURRENT_PGN_AC = 130817
+  const CURRENT_DC_SCALE = 0.1
+  const CURRENT_AC_SCALE = 0.2
+
+  function currentCircuit (module, page, slot, pgn) {
+    if (!mapping || !Array.isArray(mapping.circuits)) return null
+    if (pgn === CURRENT_PGN_AC && Number(module) !== 0xF8) return null
+    if (pgn === CURRENT_PGN_DC && Number(module) === 0x28) return null
+    return mapping.circuits.find(c =>
+      Number(c.module) === Number(module) &&
+      Number(c.page) === Number(page) &&
+      Number(c.slot) === Number(slot)
+    ) || null
+  }
+
+  function publishCurrent (circuit, current, pgn, source) {
+    if (!circuit || !Number.isFinite(current)) return
+    const pathName = 'electrical.czone.' + circuit.slug + '.current'
+    const previous = publishedCircuitValues.get(pathName)
+    if (previous !== undefined && Object.is(previous, current)) return
+    publishedCircuitValues.set(pathName, current)
+    const sourceInfo = {
+      label: pgn === CURRENT_PGN_AC ? 'CZone-AC' : 'CZone-DC',
+      type: 'NMEA2000',
+      src: String(source),
+      pgn: Number(pgn)
+    }
+    const delta = signalk.circuitDelta(pathName, current, circuit, sourceInfo)
+    if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
+    else if (typeof app.emit === 'function') app.emit('delta', delta)
+  }
+
+  function decodeCurrentPacket (packet) {
+    if (!packet || (packet.pgn !== CURRENT_PGN_DC && packet.pgn !== CURRENT_PGN_AC) || packet.payload.length !== 28) return
+    const module = packet.payload[2]
+    const page = packet.payload[3]
+    const scale = packet.pgn === CURRENT_PGN_AC ? CURRENT_AC_SCALE : CURRENT_DC_SCALE
+    for (let slot = 0; slot < 8; slot++) {
+      const circuit = currentCircuit(module, page, slot, packet.pgn)
+      if (!circuit) continue
+      const rawCurrent = packet.payload[4 + slot * 3]
+      const current = Number((rawCurrent * scale).toFixed(3))
+      publishCurrent(circuit, current, packet.pgn, packet.source)
+    }
+  }
+
   function decodeDcStatePacket (packet) {
     if (!packet || packet.pgn !== 130822 || packet.payload.length !== 28) return
     if (packet.payload[0] !== 0x27 || packet.payload[1] !== 0x99) return
     const module = packet.payload[2]
     const page = packet.payload[3]
+    decodeCurrentPacket(packet)
     log(`CZone LEVEL IN: PGN 130822 src=${packet.source} module=0x${module.toString(16).padStart(2, '0')} page=${page} payload=${packet.payload.toString('hex').toUpperCase()}`)
     for (let slot = 0; slot < 8; slot++) {
       const i = 4 + slot * 3
@@ -646,7 +694,7 @@ module.exports = function (app) {
       decodeCzoneCircuitStatus(frame)
       return
     }
-    if (frame.pgn === 130822) {
+    if (frame.pgn === 130822 || frame.pgn === 130817) {
       if (!reassembler) return
       reassembler.accept(frame)
     }
