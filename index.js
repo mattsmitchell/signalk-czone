@@ -1183,6 +1183,13 @@ module.exports = function (app) {
         })
       })
 
+      router.get('/monitoring', (_req, res) => {
+        res.json({
+          file: mapping ? mapping.fileName : null,
+          meters: monitoringRuntime ? monitoringRuntime.meters : []
+        })
+      })
+
       router.get('/circuits', (_req, res) => {
         res.json({
           sendingEnabled: settings.allowCzoneWrite === true,
