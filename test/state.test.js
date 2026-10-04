@@ -116,6 +116,18 @@ assert.strictEqual(brightnessDelta.updates[0].source.type, 'NMEA2000')
 assert.strictEqual(brightnessDelta.updates[0].source.src, '41')
 assert.strictEqual(brightnessDelta.updates[0].source.pgn, 130822)
 
+// Current is telemetry: an identical CZone 130822 observation must still be
+// published for time-series consumers, while the unchanged brightness path
+// remains deduplicated for UI-facing state updates.
+const currentPath = 'electrical.czone.Galley_Lights.current'
+const currentCountBeforeRepeat = deltas.filter(d => d.updates[0].values.some(v => v.path === currentPath)).length
+const brightnessCountBeforeRepeat = deltas.filter(d => d.updates[0].values.some(v => v.path === 'electrical.czone.Galley_Lights.switch.brightness')).length
+for (const frame of fastFrames('1CFF06', '29', dcPayload, 3)) rawListeners.get('canboatjs:rawoutput')(frame)
+const currentCountAfterRepeat = deltas.filter(d => d.updates[0].values.some(v => v.path === currentPath)).length
+const brightnessCountAfterRepeat = deltas.filter(d => d.updates[0].values.some(v => v.path === 'electrical.czone.Galley_Lights.switch.brightness')).length
+assert.strictEqual(currentCountAfterRepeat, currentCountBeforeRepeat + 1)
+assert.strictEqual(brightnessCountAfterRepeat, brightnessCountBeforeRepeat)
+
 // 50% and 0% transitions are decoded from the DC level field.
 const halfPayload = makeDcPayload(galley.statusModule, galleyStatusPage, galleyStatusSlot, 32, 0x05f4) // (1524-1024)/10 = 50%
 for (const frame of fastFrames('1CFF06', '29', halfPayload, 1)) rawListeners.get('canboatjs:rawoutput')(frame)
