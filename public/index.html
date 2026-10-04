@@ -236,10 +236,13 @@
   const nameKey = c => c.slug || c.name;
   const stateOf = c => c.state && c.state.state === 'ON';
   const percentOf = c => c.state && Number.isFinite(c.state.percent) ? c.state.percent : null;
-  const catList = () => [...new Set(circuits.flatMap(c => c.subCategories || []))].sort((a,b) => a.localeCompare(b));
-  const countCat = cat => circuits.filter(c => (c.subCategories || []).includes(cat)).length;
+  const categoryData = c => c.categories || { master: [], sub: [], userDefined: [] };
+  const allCategories = c => [...(categoryData(c).master || []), ...(categoryData(c).sub || []), ...(categoryData(c).userDefined || [])];
+  const catList = () => [...new Set(circuits.flatMap(allCategories))].sort((a,b) => a.localeCompare(b));
+  const countCat = cat => circuits.filter(c => allCategories(c).includes(cat)).length;
   const activeCount = () => circuits.filter(stateOf).length;
-  const masterCount = m => circuits.filter(c => c.masterCategory === m).length;
+  const masterCount = m => circuits.filter(c => (categoryData(c).master || []).includes(m)).length;
+  const subCategoryList = c => [...new Set([...(categoryData(c).sub || []), ...(categoryData(c).userDefined || [])])];
   const icon = c => categoryIcons[c] || '•';
   const color = c => categoryColors[c] || '#4bb5ff';
 
@@ -265,12 +268,13 @@
 
   function currentList() {
     let list = circuits.filter(c => {
+      if (c.showInCircuitList === false) return false;
       if (view==='inuse' && !stateOf(c)) return false;
       if (view==='favorites' && !favorites.has(nameKey(c))) return false;
-      if (view==='ac' && c.masterCategory!=='AC') return false;
-      if (view==='dc' && c.masterCategory!=='DC') return false;
-      if (category && !(c.subCategories || []).includes(category)) return false;
-      if (query && !(`${c.name} ${(c.subCategories||[]).join(' ')} ${c.masterCategory||''}`.toLowerCase().includes(query.toLowerCase()))) return false;
+      if (view==='ac' && !(categoryData(c).master || []).includes('AC')) return false;
+      if (view==='dc' && !(categoryData(c).master || []).includes('DC')) return false;
+      if (category && !allCategories(c).includes(category)) return false;
+      if (query && !(`${c.name} ${allCategories(c).join(' ')}`.toLowerCase().includes(query.toLowerCase()))) return false;
       return true;
     });
     list.sort((a,b) => sort==='state' ? Number(stateOf(b))-Number(stateOf(a)) || a.name.localeCompare(b.name) : sort==='brightness' ? (percentOf(b)||0)-(percentOf(a)||0) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name));
@@ -289,12 +293,12 @@
   function circuitRow(c) {
     const on = stateOf(c), pct = percentOf(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = favorites.has(nameKey(c));
     const p = pending.get(nameKey(c));
-    const cats = (c.subCategories || []).slice(0,3).map(x => `<span class="tag cat" style="--cat:${color(x)}">${esc(x)}</span>`).join('');
+    const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" style="--cat:${color(x)}">${esc(x)}</span>`).join('');
     const disabled = p && p.kind === 'state';
     const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on?'ON':'OFF')}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
     const sending = p ? `<span class="sending">Sending…</span>` : '';
-    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}</strong><small>${esc(c.masterCategory || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><span class="arrow">›</span></div>`;
+    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><span class="arrow">›</span></div>`;
   }
 
   function previewPercent(el) { const out=el.parentElement.querySelector('.percent'); out.textContent=el.value+'%'; }
