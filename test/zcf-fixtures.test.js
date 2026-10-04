@@ -74,7 +74,7 @@ async function main () {
     [{ name: 'Fallback Circuit', module: 7, channel: 3, zcf: { outputs: [] } }],
     new Map(),
     new Map(),
-    null
+    { format: 'synthetic-status-table' }
   )[0]
   assert.strictEqual(fallback.statusModule, 7)
   assert.strictEqual(fallback.statusBit, 3)
