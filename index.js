@@ -522,15 +522,48 @@ module.exports = function (app) {
   }
   function decodeCurrentPacket (packet) {
     if (!packet || (packet.pgn !== CURRENT_PGN_DC && packet.pgn !== CURRENT_PGN_AC) || packet.payload.length !== 28) return
-    const module = packet.payload[2]
-    const page = packet.payload[3]
+    const header = nmea.decodeCzoneHeader(packet.payload, packet.pgn)
+    if (!header) return
+    const module = header.module
+    const page = header.page
     const scale = packet.pgn === CURRENT_PGN_AC ? CURRENT_AC_SCALE : CURRENT_DC_SCALE
+
     for (let slot = 0; slot < 8; slot++) {
-      const circuit = currentCircuit(module, page, slot, packet.pgn)
-      if (!circuit) continue
       const rawCurrent = packet.payload[4 + slot * 3]
-      const current = Number((rawCurrent * scale).toFixed(3))
-      publishCurrent(circuit, current, packet.pgn, packet.source)
+      const circuit = currentCircuit(module, page, slot, packet.pgn)
+
+      // 130817 is also emitted by Output Interface modules for level
+      // telemetry. Those modules are not AC current mappings, so only publish
+      // current when the normal current mapping identifies a circuit.
+      if (circuit) {
+        const current = Number((rawCurrent * scale).toFixed(3))
+        publishCurrent(circuit, current, packet.pgn, packet.source)
+      }
+
+      if (packet.pgn !== CURRENT_PGN_AC || !mapping || !Array.isArray(mapping.circuits)) continue
+      const levelCircuit = mapping.circuits.find(c =>
+        Number(c.module) === Number(module) &&
+        Number(c.page) === Number(page) &&
+        Number(c.slot) === Number(slot)
+      )
+      if (!levelCircuit) continue
+
+      const rawLevel = packet.payload[5 + slot * 3] | (packet.payload[6 + slot * 3] << 8)
+      const level = decodeDcLevel(rawLevel)
+      if (level.percent == null) continue
+
+      const state = runtimeState.get(levelCircuit.name)
+      if (state) {
+        state.percent = level.percent
+        state.lastObservedPercent = level.percent
+      }
+
+      publishCircuitDelta(
+        levelCircuit,
+        signalk.brightnessPath(levelCircuit),
+        Math.max(0, Math.min(100, level.percent)) / 100,
+        signalk.nmea2000Source(packet.source, packet.pgn)
+      )
     }
   }
 
