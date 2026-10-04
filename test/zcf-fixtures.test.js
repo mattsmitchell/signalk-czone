@@ -51,7 +51,7 @@ async function main () {
   const selCitron = await loadCanonicalFixture('Sel-Citron-02.04.25.zcf')
   const bilgeBuzzer = selCitron.circuits.find(c => c.name === 'Bilge Buzzer - Port')
   assert(bilgeBuzzer, 'Sel Citron: Bilge Buzzer - Port must be present')
-  assert(bilgeBuzzer.subCategories.includes('Alarms'), 'Sel Citron: Bilge Buzzer - Port must decode Alarms')
+  assert(bilgeBuzzer.subCategories.includes('Indicators and Alarms'), 'Sel Citron: Bilge Buzzer - Port must decode Alarms')
   assert.strictEqual(bilgeBuzzer.zcf.category.unknownSubCategoryBits & 0x00800000, 0)
 
   const sugar = await loadCanonicalFixture('SugarShack-20260927-01.zcf')
@@ -68,7 +68,7 @@ async function main () {
       ['Light 2', 1, 1, 0x07],
       ['Light 3', 1, 2, 0x08],
       ['Light 4', 1, 3, 0x09],
-      ['Light 5', 1, 5, 0x0A]
+      ['Light 5', 1, 4, 0x0A]
     ]
   )
 
