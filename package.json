@@ -1,7 +1,7 @@
 {
   "name": "signalk-czone",
   "version": "0.3.0-beta.8",
-  "description": "Standalone Signal K CZone NMEA2000 current decoder with validated ZCF upload configuration and AC/DC classification metadata",
+  "description": "Signal K CZone monitoring and control using dynamically parsed ZCF configuration and NMEA 2000",
   "main": "index.js",
   "keywords": [
     "signalk-node-server-plugin",
@@ -9,12 +9,13 @@
     "signalk-plugin-configurator",
     "signalk-category-digital-switching",
     "czone",
-    "nmea2000"
+    "nmea2000",
+    "signalk-webapp"
   ],
   "license": "MIT",
   "signalk": {
     "displayName": "CZone",
-    "appIcon": "./img/czone-circuits.png",
+    "appIcon": "./icon.png",
     "recommends": [
       "@signalk/signalk-to-influxdb2"
     ],
@@ -38,9 +39,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js"
+    "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js && node test/circuit-state.test.js && node test/czone.test.js && node test/nmea2000.test.js && node test/signalk.test.js && node test/write.test.js && node test/circuit-status.test.js && node test/state.test.js && node test/config-network.test.js && node test/config-namespace.test.js"
   },
   "dependencies": {
-    "signalk-czone-zcf": "github:mattsmitchell/signalk-czone-zcf#main"
+    "signalk-czone-zcf": "github:mattsmitchell/signalk-czone-zcf#complete-zcf-structural-metadata"
   }
 }
