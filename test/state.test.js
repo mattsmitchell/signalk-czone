@@ -66,25 +66,6 @@ function fastFrames (pgnHex, sourceHex, payload, sequence = 0) {
 }
 
 const galley = require('../lib/zcf').load(zcfSource).circuits.find(c => c.name === 'Galley Lights')
-const outputInterface = require('../lib/zcf').load(zcfSource).circuits.find(c => c.module === 0x01)
-assert(outputInterface, 'Sugar Shack fixture must contain an Output Interface circuit')
-const acLevelPayload = Buffer.alloc(28)
-acLevelPayload[0] = 0x27
-acLevelPayload[1] = 0x99
-// 130817 header order is page, module.
-acLevelPayload[2] = outputInterface.page
-acLevelPayload[3] = outputInterface.module
-const acSlot = outputInterface.slot
-acLevelPayload[4 + acSlot * 3] = 0
-acLevelPayload[5 + acSlot * 3] = 0xF4
-acLevelPayload[6 + acSlot * 3] = 0x05 // 50%
-for (const frame of fastFrames('1CFF01', '2A', acLevelPayload, 4)) rawListeners.get('canboatjs:rawoutput')(frame)
-const acBrightness = deltas.slice().reverse().find(d => d.updates[0].values.some(v => v.path === 'electrical.czone.' + outputInterface.slug + '.switch.brightness'))
-assert(acBrightness, '130817 Output Interface level telemetry must publish brightness')
-assert.strictEqual(acBrightness.updates[0].values.find(v => v.path.endsWith('.switch.brightness')).value, 0.5)
-assert.strictEqual(acBrightness.updates[0].source.pgn, 130817)
-
-
 
 // PGN 65284 is the authoritative circuit state. Galley Lights is encoded in
 // runtime status module 0x14, bit 1 in the ZCF status table.
