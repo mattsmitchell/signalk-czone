@@ -101,10 +101,11 @@ module.exports = function (app) {
   let nmeaReadyAt = null
   let lastNmeaOutput = null
   let runtimeState = new Map()
-  // Server-side publication cache. CZone status/telemetry packets repeat the
-  // same values frequently; only publish a Signal K delta when the value for a
-  // circuit path actually changes. Signal K then fans that single change out
-  // to every connected web client.
+  // Server-side change cache for circuit state/brightness notifications.
+  // CZone telemetry repeats values frequently; those UI-facing paths are
+  // published only when their observed value changes. Current telemetry is
+  // deliberately published on every packet below so time-series consumers
+  // such as InfluxDB retain the observation cadence.
   let publishedCircuitValues = new Map()
   let reassembler = null
   let rawListener = null
@@ -507,20 +508,18 @@ module.exports = function (app) {
   function publishCurrent (circuit, current, pgn, source) {
     if (!circuit || !Number.isFinite(current)) return
     const pathName = 'electrical.czone.' + circuit.slug + '.current'
-    const previous = publishedCircuitValues.get(pathName)
-    if (previous !== undefined && Object.is(previous, current)) return
-    publishedCircuitValues.set(pathName, current)
     const sourceInfo = {
       label: pgn === CURRENT_PGN_AC ? 'CZone-AC' : 'CZone-DC',
       type: 'NMEA2000',
       src: String(source),
       pgn: Number(pgn)
     }
+    // Current is telemetry, not a change notification. Publish every valid
+    // observation so time-series consumers retain the CZone reporting cadence.
     const delta = signalk.circuitDelta(pathName, current, circuit, sourceInfo)
     if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
     else if (typeof app.emit === 'function') app.emit('delta', delta)
   }
-
   function decodeCurrentPacket (packet) {
     if (!packet || (packet.pgn !== CURRENT_PGN_DC && packet.pgn !== CURRENT_PGN_AC) || packet.payload.length !== 28) return
     const module = packet.payload[2]
