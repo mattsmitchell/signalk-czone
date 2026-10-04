@@ -268,6 +268,7 @@
 
   function currentList() {
     let list = circuits.filter(c => {
+      if (c.showInCircuitList === false) return false;
       if (view==='inuse' && !stateOf(c)) return false;
       if (view==='favorites' && !favorites.has(nameKey(c))) return false;
       if (view==='ac' && !(categoryData(c).master || []).includes('AC')) return false;
