@@ -491,6 +491,7 @@ module.exports = function (app) {
 
   const CURRENT_PGN_DC = 130822
   const CURRENT_PGN_AC = 130817
+  const CURRENT_PGN_CONTROL_X_PLUS = 130825
   const CURRENT_DC_SCALE = 0.1
   const CURRENT_AC_SCALE = 0.2
 
@@ -521,7 +522,32 @@ module.exports = function (app) {
     else if (typeof app.emit === 'function') app.emit('delta', delta)
   }
   function decodeCurrentPacket (packet) {
-    if (!packet || (packet.pgn !== CURRENT_PGN_DC && packet.pgn !== CURRENT_PGN_AC) || packet.payload.length !== 28) return
+    if (!packet) return
+
+    if (packet.pgn === CURRENT_PGN_CONTROL_X_PLUS) {
+      const table = nmea.decodeControlXPlusCurrentPacket(packet.payload)
+      if (!table) return
+      for (const slot of table.slots) {
+        const circuit = currentCircuit(table.module, table.page, slot.channel - table.page * 8, packet.pgn)
+        if (!circuit) continue
+        publishCurrent(circuit, slot.current, packet.pgn, packet.source)
+        if (slot.level == null) continue
+        const state = runtimeState.get(circuit.name)
+        if (state) {
+          state.percent = slot.level
+          state.lastObservedPercent = slot.level
+        }
+        publishCircuitDelta(
+          circuit,
+          signalk.brightnessPath(circuit),
+          Math.max(0, Math.min(1000, slot.level)) / 1000,
+          signalk.nmea2000Source(packet.source, packet.pgn)
+        )
+      }
+      return
+    }
+
+    if ((packet.pgn !== CURRENT_PGN_DC && packet.pgn !== CURRENT_PGN_AC) || packet.payload.length !== 28) return
     const header = nmea.decodeCzoneHeader(packet.payload, packet.pgn)
     if (!header) return
     const module = header.module
