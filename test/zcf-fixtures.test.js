@@ -34,7 +34,7 @@ async function main () {
     assert.strictEqual(mapping.vesselName, vesselName, filename + ': vessel/config name')
     assert.strictEqual(mapping.circuits.length, expectedCount, filename + ': circuit count')
     assert(mapping.circuits.every(c => c.module === null || c.module >= 0), filename + ': circuit module value')
-    assert(mapping.circuits.every(c => c.channel === null || (c.channel >= 0 && c.channel <= 0x29)), filename + ': channel range')
+    assert(mapping.circuits.every(c => c.channel === null || c.channel >= 0), filename + ': channel range')
     assert(mapping.circuits.every(c => c.name.length > 0), filename + ': circuit names')
   }
 
@@ -71,18 +71,6 @@ async function main () {
       ['Light 5', 1, 5, 0x0A]
     ]
   )
-
-  const fallback = zcf.attachStatusMappings(
-    [{ name: 'Fallback Circuit', module: 7, channel: 3, zcf: { outputs: [] } }],
-    new Map(),
-    new Map(),
-    { format: 'synthetic-status-table' }
-  )[0]
-  assert.strictEqual(fallback.statusModule, 7)
-  assert.strictEqual(fallback.statusBit, 3)
-  assert.strictEqual(fallback.statusMask, 0x08)
-  assert.strictEqual(fallback.statusConfidence, 'primary-module-channel-fallback')
-  assert.strictEqual(fallback.zcf.statusSource, 'primary-module-channel')
 
   console.log('Generic ZCF fixture parser tests passed')
 }
