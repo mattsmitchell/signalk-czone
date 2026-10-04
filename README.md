@@ -36,7 +36,7 @@ The plugin does **not** modify Signal K Server, canboatjs, n2k-signalk, or any g
 
 At the input boundary it normalizes the NMEA 2000 frame representation, then extracts the CAN ID, reassembles Fast Packets, validates the CZone `27 99` payload, decodes PGNs 130822 (DC/COI) and 130817 (AC/ACOI), and applies the existing ZCF mapping.
 
-The existing `lib/zcf.js` is intentionally not included here: keep the working ZCF parser from the current plugin installation unchanged.
+The reusable `signalk-czone-zcf` library owns the ZCF parser and CZone configuration model. This plugin keeps only the runtime adapter needed to turn that model into Signal K paths and live NMEA 2000 telemetry mappings.
 
 ## ZCF upload
 
