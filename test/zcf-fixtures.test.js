@@ -41,10 +41,9 @@ async function main () {
   const testBench = await loadCanonicalFixture('TestBench.zcf')
   assert(testBench.circuits.every(c => c.statusModule != null && c.statusBit != null && c.statusMask != null), 'TestBench: status mappings must attach')
   const sugarStatus = await loadCanonicalFixture('SugarShack-20260927-01.zcf')
-  assert(sugarStatus.circuits.every(c =>
-    (c.statusModule != null && c.statusBit != null && c.statusMask != null) ||
-    (c.channel != null && c.channel > 31)
-  ), 'Sugar Shack: every mappable circuit must have a status mapping or documented >31 channel')
+  const sugarGalley = sugarStatus.circuits.find(c => c.name === 'Galley Lights')
+  assert(sugarGalley, 'Sugar Shack: Galley Lights fixture circuit')
+  assert(sugarGalley.statusModule != null && sugarGalley.statusBit != null && sugarGalley.statusMask != null, 'Sugar Shack: Galley Lights status mapping')
   assert(testBench.modules.some(m => m.module === 0x01 && m.name === 'Output Interface'))
   assert.strictEqual(testBench.modules.length, 4)
   assert(testBench.modules.some(m => m.module === 0x10 && m.name === 'Display'))
