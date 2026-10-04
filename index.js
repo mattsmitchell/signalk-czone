@@ -5,6 +5,7 @@ const fs = require('fs')
 const zcf = require('./lib/zcf')
 const czone = require('./lib/czone')
 const nmea = require('./lib/nmea2000')
+const monitoring = require('./lib/monitoring')
 const signalk = require('./lib/signalk')
 
 const MAX_UPLOAD_BYTES = 1024 * 1024
@@ -101,6 +102,7 @@ module.exports = function (app) {
   let nmeaReadyAt = null
   let lastNmeaOutput = null
   let runtimeState = new Map()
+  let monitoringRuntime = null
   // Server-side change cache for circuit state/brightness notifications.
   // CZone telemetry repeats values frequently; those UI-facing paths are
   // published only when their observed value changes. Current telemetry is
@@ -163,6 +165,7 @@ module.exports = function (app) {
     mapping = zcf.load(zcfPath())
     mapping.commandDeviceId = selectCommandDeviceId(mapping)
     publishedCircuitValues.clear()
+    monitoringRuntime = monitoring.createRuntime(mapping.meters || [])
     runtimeState = new Map(mapping.circuits.map(c => [c.name, {
       state: null,
       percent: null,
@@ -739,10 +742,33 @@ module.exports = function (app) {
     }
   }
 
+  function publishMonitoringDelta (meter, pathName, value, source) {
+    if (!monitoringRuntime || !Number.isFinite(value)) return
+    if (!monitoringRuntime.publishable(pathName, value)) return
+    const delta = signalk.delta(pathName, value, source)
+    if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
+    else if (typeof app.emit === 'function') app.emit('delta', delta)
+  }
+
+  function handleMonitoringFrame (frame) {
+    if (!monitoringRuntime) return
+    const observations = monitoringRuntime.observe(frame)
+    for (const observation of observations) {
+      const meter = observation.meter
+      for (const [field, value] of Object.entries(observation.values)) {
+        if (!Number.isFinite(value)) continue
+        const pathName = meter.signalK[field]
+        if (!pathName) continue
+        publishMonitoringDelta(meter, pathName, value, observation.source)
+      }
+    }
+  }
+
   function handleRawFrame (line) {
     const frame = nmea.parseRawLine(line)
     if (!frame) return
     observeModeCommand(frame)
+    handleMonitoringFrame(frame)
     if (frame.pgn === nmea.CZONE_DATABLOCK_PGN) {
       handleConfigFastPacket(frame)
       return
@@ -1133,6 +1159,8 @@ module.exports = function (app) {
       if (rawListener && typeof app.removeListener === 'function') app.removeListener('canboatjs:rawoutput', rawListener)
       rawListener = null
       if (reassembler) reassembler.clear()
+      if (monitoringRuntime) monitoringRuntime.clear()
+      monitoringRuntime = null
       reassembler = null
       configFastPacket = null
       clearConfigTransfer()
@@ -1164,7 +1192,9 @@ module.exports = function (app) {
           file: mapping ? mapping.fileName : null,
           warnings: mapping ? mapping.warnings : [],
           modes: mapping ? mapping.modes : [],
+          monitoring: monitoringRuntime ? monitoringRuntime.meters : [],
           activeMode: activeMode ? { id: activeMode.id, runtimeId: activeMode.runtimeId, name: activeMode.name, slug: activeMode.slug, modeGroupId: activeMode.modeGroupId } : null,
+          monitoring: monitoringRuntime ? monitoringRuntime.meters : [],
           circuits: mapping
             ? mapping.circuits.map(c => ({
                 ...c,
