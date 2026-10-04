@@ -5,6 +5,13 @@ const nmea2000 = require('../lib/nmea2000')
 
 assert.strictEqual(nmea2000.getPgnFromCanId(0x18ff042a), 65284)
 assert.strictEqual(nmea2000.getPgnFromCanId(0x18ff0617), 130822)
+assert.deepStrictEqual(
+  nmea2000.decodeCzoneHeader(
+    Buffer.from('2799000100000000000000000000000000000000000000000000', 'hex'),
+    130817
+  ),
+  { page: 0x00, module: 0x01 }
+)
 
 const frame = nmea2000.parseRawLine(
   '2026-10-02T08:00:00.000Z R 18ff042a 27 99 0a 00 01 00 00 00'
