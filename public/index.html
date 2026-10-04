@@ -472,18 +472,27 @@
     } catch (_) {}
   }
 
-  async function post(path, body, circuit, kind, requested, previous) {
+  function signalKPath(circuit, leaf) {
+    return `/signalk/v1/api/vessels/self/electrical/czone/${encodeURIComponent(circuit.slug)}/switch/${leaf}`;
+  }
+
+  async function putSignalK(path, value, circuit, kind, requested, previous) {
     setPending(circuit, kind, requested, previous);
     render();
     try {
-      const r = await fetch(`${API}${path}`, { method:'POST', credentials:'include', headers: body ? {'Content-Type':'application/json'} : undefined, body: body ? JSON.stringify(body) : undefined });
+      const r = await fetch(path, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value })
+      });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'Command failed');
-      // HTTP 200 means the command was accepted by Signal K. CZone confirmation
-      // normally comes from the WebSocket delta. A short, command-only REST
-      // reconciliation is a fallback in case the browser misses that delta; it
-      // does not run while idle and does not replace the server-side cache.
-      console.debug('[CZone UI] command accepted', circuit.name, kind, requested, 'WebSocket confirmation pending');
+      if (!r.ok) throw new Error(data.message || data.error || `PUT failed (HTTP ${r.status})`);
+      // The PUT is a request, not an observed-state update. CZone telemetry
+      // remains authoritative and confirms the command through the WebSocket.
+      // Keep the existing REST reconciliation only as a fallback if the browser
+      // misses that confirmation; it never writes the requested value back.
+      console.debug('[CZone UI] Signal K PUT accepted', circuit.name, kind, requested, data);
       startPendingReconciliation(circuit, kind);
       render();
     } catch (e) {
@@ -492,6 +501,7 @@
       alert(e.message);
     }
   }
+
   window.toggleCircuit = (name, on) => {
     if (status.sendingEnabled !== true) { alert('CZone write control is disabled. Enable “Enable CZone read/write control” in Plugin Config first.'); return; }
     const c = circuits.find(x => x.name === decodeURIComponent(name)); if (!c) return;
@@ -500,7 +510,7 @@
     c.state = c.state || {};
     const previous = c.state.state || 'OFF';
     c.state.state = on ? 'ON' : 'OFF';
-    post(`/circuits/${name}/${on?'on':'off'}`, null, c, 'state', on ? 'ON' : 'OFF', previous);
+    putSignalK(signalKPath(c, 'state'), on, c, 'state', on ? 'ON' : 'OFF', previous);
   };
   window.setLevel = (name, value) => {
     if (status.sendingEnabled !== true) { alert('CZone write control is disabled. Enable “Enable CZone read/write control” in Plugin Config first.'); return; }
@@ -509,7 +519,7 @@
     const requested = Math.max(10, Number(value));
     const previous = Number.isFinite(c.state.percent) ? c.state.percent : 100;
     c.state.percent = requested;
-    post(`/circuits/${name}/level`, { percent: requested }, c, 'brightness', requested, previous);
+    putSignalK(signalKPath(c, 'brightness'), requested / 100, c, 'brightness', requested, previous);
   };
   window.toggleFavorite = key => { favorites.has(key) ? favorites.delete(key) : favorites.add(key); saveFavorites(); render(); };
 
