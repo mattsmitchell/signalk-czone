@@ -39,6 +39,9 @@ async function main () {
   }
 
   const testBench = await loadCanonicalFixture('TestBench.zcf')
+  assert(testBench.circuits.every(c => c.statusModule != null && c.statusBit != null && c.statusMask != null), 'TestBench: status mappings must attach')
+  const sugarStatus = await loadCanonicalFixture('SugarShack-20260927-01.zcf')
+  assert(sugarStatus.circuits.every(c => c.statusModule != null && c.statusBit != null && c.statusMask != null), 'Sugar Shack: status mappings must attach')
   assert(testBench.modules.some(m => m.module === 0x01 && m.name === 'Output Interface'))
   assert.strictEqual(testBench.modules.length, 4)
   assert(testBench.modules.some(m => m.module === 0x10 && m.name === 'Display'))
@@ -66,6 +69,18 @@ async function main () {
       ['Light 5', 1, 5, 0x0A]
     ]
   )
+
+  const fallback = zcf.attachStatusMappings(
+    [{ name: 'Fallback Circuit', module: 7, channel: 3, zcf: { outputs: [] } }],
+    new Map(),
+    new Map(),
+    null
+  )[0]
+  assert.strictEqual(fallback.statusModule, 7)
+  assert.strictEqual(fallback.statusBit, 3)
+  assert.strictEqual(fallback.statusMask, 0x08)
+  assert.strictEqual(fallback.statusConfidence, 'primary-module-channel-fallback')
+  assert.strictEqual(fallback.zcf.statusSource, 'primary-module-channel')
 
   console.log('Generic ZCF fixture parser tests passed')
 }
