@@ -14,7 +14,7 @@ const cases = [
   ['Compass-Rose-28.06.26.zcf', 'Compass Rose 28.06.26', 35],
   ['Persevere-14.07.25.zcf', 'Persevere 14.07.25', 58],
   ['Sel-Citron-02.04.25.zcf', 'Sel Citron 02.04.25', 102],
-  ['Meitaki-07.04.25.zcf', 'Meitaki-07.04.25', 109]
+  ['Meitaki-07.04.25.zcf', 'Meitaki 07.04.25', 109]
 ]
 
 const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-zcf-'))
