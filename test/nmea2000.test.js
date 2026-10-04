@@ -5,6 +5,9 @@ const nmea2000 = require('../lib/nmea2000')
 
 assert.strictEqual(nmea2000.getPgnFromCanId(0x18ff042a), 65284)
 assert.strictEqual(nmea2000.getPgnFromCanId(0x18ff0617), 130822)
+assert.strictEqual(nmea2000.getPgnFromCanId(0x09fd0865), 130312)
+assert.strictEqual(nmea2000.getPgnFromCanId(0x19f21409), 127508)
+assert.strictEqual(nmea2000.getPgnFromCanId(0x19f30309), 127747)
 assert.deepStrictEqual(
   nmea2000.decodeCzoneHeader(
     Buffer.from('2799000100000000000000000000000000000000000000000000', 'hex'),
