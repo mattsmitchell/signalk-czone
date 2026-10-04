@@ -1186,7 +1186,7 @@ module.exports = function (app) {
       router.get('/monitoring', (_req, res) => {
         res.json({
           file: mapping ? mapping.fileName : null,
-          meters: monitoringRuntime ? monitoringRuntime.meters : []
+          meters: mapping ? mapping.meters : []
         })
       })
 
