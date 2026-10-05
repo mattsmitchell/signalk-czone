@@ -89,8 +89,10 @@
     .circuit-name small { display:block; color:#738ca4; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tags { display:flex; flex-wrap:wrap; gap:4px; }
     .tag { font-size:10px; padding:4px 7px; border-radius:999px; background:#152d44; color:#bdd1e3; }
-    .tag.cat { width:24px; height:24px; padding:0; display:grid; place-items:center; background:color-mix(in srgb, var(--cat) 14%, #10263b); color:color-mix(in srgb, var(--cat) 82%, white); font-size:13px; cursor:help; }
+    .tag.cat { width:25px; height:25px; padding:0; display:grid; place-items:center; background:color-mix(in srgb, var(--cat) 14%, #10263b); color:color-mix(in srgb, var(--cat) 82%, white); font-size:13px; cursor:help; border:1px solid color-mix(in srgb, var(--cat) 28%, transparent); box-shadow:inset 0 0 0 1px rgba(255,255,255,.025); }
+    .tag.cat:hover, .tag.cat:focus-visible { background:color-mix(in srgb, var(--cat) 24%, #10263b); border-color:color-mix(in srgb, var(--cat) 55%, transparent); transform:translateY(-1px); }
     .tag.cat[title] { user-select:none; }
+    .tag.cat:focus-visible { outline:2px solid color-mix(in srgb, var(--cat) 75%, white); outline-offset:2px; }
     .status { display:flex; align-items:center; gap:7px; font-size:11px; color:#a7bdd1; }
     .status-dot { width:8px; height:8px; border-radius:50%; background:#6c8399; }
     .status.on { color:#64e4aa; }
@@ -325,7 +327,7 @@
   function circuitRow(c) {
     const on = stateOf(c), pct = percentOf(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = favorites.has(nameKey(c));
     const p = pending.get(nameKey(c));
-    const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" style="--cat:${color(x)}" title="${esc(x)}" aria-label="${esc(x)}">${icon(x)}</span>`).join('');
+    const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" role="img" tabindex="0" style="--cat:${color(x)}" title="${esc(x)}" aria-label="${esc(x)} category">${icon(x)}</span>`).join('');
     const disabled = p && p.kind === 'state';
     const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on?'ON':'OFF')}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
