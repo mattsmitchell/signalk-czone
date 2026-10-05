@@ -1190,6 +1190,13 @@ module.exports = function (app) {
         })
       })
 
+      router.get('/monitoring/tanks', (_req, res) => {
+        res.json({
+          file: mapping ? mapping.fileName : null,
+          tankMonitors: mapping ? mapping.tankMonitors : []
+        })
+      })
+
       router.get('/circuits', (_req, res) => {
         res.json({
           sendingEnabled: settings.allowCzoneWrite === true,
