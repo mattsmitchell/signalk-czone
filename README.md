@@ -30,6 +30,31 @@ The plugin:
 The plugin is therefore a **CZone electrical-current decoder and Signal K integration**, rather than a general-purpose NMEA 2000 decoder.
 
 
+
+## ZCF tank definitions
+
+The canonical `signalk-czone-zcf` parser also exposes tank-monitor definitions from the installed ZCF. These definitions include tank names, calibration points, capacity, alarm/switch thresholds, delays, enable bitmaps, and configured severity codes.
+
+For validation and diagnostics, the plugin exposes:
+
+```text
+GET /plugins/signalk-czone/monitoring/tanks
+```
+
+For example:
+
+```bash
+curl -s http://127.0.0.1:3000/plugins/signalk-czone/monitoring/tanks | jq
+```
+
+The response contains the active ZCF filename and a `tankMonitors` object with the parsed monitor definitions. This endpoint exposes **configuration only**; it does not yet represent live tank level or alarm state from NMEA 2000. Live CZone tank telemetry is a future task.
+
+The existing electrical-monitoring definition endpoint remains:
+
+```text
+GET /plugins/signalk-czone/monitoring
+```
+
 ## Design
 
 The plugin does **not** modify Signal K Server, canboatjs, n2k-signalk, or any global PGN definitions.
@@ -118,7 +143,7 @@ cd /root/.signalk/node_modules
 npm install /path/to/signalk-czone-0.3.0-beta.5.tar.gz --omit=dev
 ```
 
-The package has no runtime npm dependencies. Do not modify Signal K Server or canboatjs.
+The package uses the canonical `signalk-czone-zcf` GitHub dependency from its `main` branch for current development and testing. Do not modify Signal K Server or canboatjs.
 
 Then restart Signal K.
 
