@@ -42,6 +42,6 @@
     "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js && node test/circuit-state.test.js && node test/czone.test.js && node test/nmea2000.test.js && node test/control-x-plus.test.js && node test/signalk.test.js && node test/write.test.js && node test/circuit-status.test.js && node test/state.test.js && node test/config-network.test.js && node test/config-namespace.test.js && node test/monitoring.test.js"
   },
   "dependencies": {
-    "signalk-czone-zcf": "github:mattsmitchell/signalk-czone-zcf#5385ce1d6633aea18ab8e51abee0d068873afb99"
+    "signalk-czone-zcf": "github:mattsmitchell/signalk-czone-zcf#main"
   }
 }
