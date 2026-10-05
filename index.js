@@ -1169,6 +1169,11 @@ module.exports = function (app) {
       mapping = null
       runtimeState.clear()
       publishedCircuitValues.clear()
+      // Signal K removes PUT handlers when the plugin stops. The plugin
+      // factory can be reused on a subsequent enable, so allow start() to
+      // register the handlers again instead of treating the stale paths as
+      // already registered.
+      registeredPutPaths.clear()
     },
 
     registerWithRouter: router => {
