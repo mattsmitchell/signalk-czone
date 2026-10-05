@@ -518,11 +518,11 @@ module.exports = function (app) {
       src: String(source),
       pgn: Number(pgn)
     }
-    // Current is telemetry, not a change notification. Publish every valid
-    // observation so time-series consumers retain the CZone reporting cadence.
-    const delta = signalk.circuitDelta(pathName, current, circuit, sourceInfo)
-    if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
-    else if (typeof app.emit === 'function') app.emit('delta', delta)
+    // Current is part of the circuit's live Signal K state. Cache it by
+    // path and only emit when the value actually changes, so slow links do not
+    // receive redundant CZone telemetry. Signal K subscribers will still see
+    // the current cached value when they subscribe.
+    publishCircuitDelta(circuit, pathName, current, sourceInfo)
   }
   function decodeCurrentPacket (packet) {
     if (!packet) return
