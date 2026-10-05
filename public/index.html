@@ -271,7 +271,7 @@
     const assigned = new Set(circuits.flatMap(allCategories).filter(c => !topLevelCategories.has(c)));
     const canonical = canonicalCategories.filter(c => assigned.has(c));
     const unknown = [...assigned].filter(c => !canonicalCategories.includes(c)).sort((a,b) => a.localeCompare(b));
-    return [...canonical, ...unknown];
+    return [...canonical, ...unknown].sort((a, b) => a.localeCompare(b));
   };
   const countCat = cat => circuits.filter(c => allCategories(c).includes(cat)).length;
   const activeCount = () => circuits.filter(stateOf).length;
