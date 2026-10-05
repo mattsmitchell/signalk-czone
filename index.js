@@ -519,7 +519,8 @@ module.exports = function (app) {
       pgn: Number(pgn)
     }
     // Current is telemetry, not a change notification. Publish every valid
-    // observation so time-series consumers retain the CZone reporting cadence.
+    // observation so Signal K subscribers and time-series consumers retain the
+    // CZone reporting cadence. Change-caching is only for UI/control paths.
     const delta = signalk.circuitDelta(pathName, current, circuit, sourceInfo)
     if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
     else if (typeof app.emit === 'function') app.emit('delta', delta)

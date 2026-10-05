@@ -265,6 +265,11 @@
   const nameKey = c => c.slug || c.name;
   const stateOf = c => c.state && c.state.state === 'ON';
   const percentOf = c => c.state && Number.isFinite(c.state.percent) ? c.state.percent : null;
+  const currentOf = c => c.state && Number.isFinite(c.state.current) ? c.state.current : null;
+  const currentLabel = c => {
+    const current = currentOf(c);
+    return current != null && current > 0 ? `${current.toFixed(1)} A` : null;
+  };
   const categoryData = c => c.categories || { master: [], sub: [], userDefined: [] };
   const allCategories = c => [...(categoryData(c).master || []), ...(categoryData(c).sub || []), ...(categoryData(c).userDefined || [])];
   const catList = () => {
@@ -325,11 +330,11 @@
   }
 
   function circuitRow(c) {
-    const on = stateOf(c), pct = percentOf(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = favorites.has(nameKey(c));
+    const on = stateOf(c), pct = percentOf(c), current = currentLabel(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = favorites.has(nameKey(c));
     const p = pending.get(nameKey(c));
     const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" role="img" tabindex="0" style="--cat:${color(x)}" title="${esc(x)}" aria-label="${esc(x)} category">${icon(x)}</span>`).join('');
     const disabled = p && p.kind === 'state';
-    const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on?'ON':'OFF')}</button>`;
+    const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" data-circuit-slug="${esc(c.slug)}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && current ? current : (on?'ON':'OFF'))}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
     const sending = p ? `<span class="sending">Sending…</span>` : '';
     return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><span class="arrow">›</span></div>`;
@@ -432,13 +437,27 @@
       }
       return false;
     }
-    const m = /^electrical\.czone\.([^\.]+)\.switch\.(state|brightness)$/.exec(path || '');
+    const m = /^electrical\.czone\.([^\.]+)\.(switch\.(?:state|brightness)|current)$/.exec(path || '');
     if (!m) return false;
     const c = circuitBySlug(m[1]);
     if (!c) { console.debug('[CZone WS] unmatched circuit path', path, value); return false; }
     c.state = c.state || {};
     const sourceLabel = source && (source.label || source.type || source.src) ? JSON.stringify(source) : 'none';
-    if (m[2] === 'state') {
+    if (m[2] === 'current') {
+      const observed = Number(value);
+      if (!Number.isFinite(observed)) { console.debug('[CZone WS] invalid current', c.name, value); return false; }
+      c.state.current = observed;
+      // Current is high-frequency telemetry. Store every observation, but update
+      // only the existing control instead of rebuilding the whole navigation and
+      // circuit list for every packet.
+      const toggle = document.querySelector(`[data-circuit-slug="${CSS.escape(c.slug)}"]`);
+      const p = pending.get(nameKey(c));
+      if (toggle && !(p && p.kind === 'state')) {
+        toggle.textContent = c.state.state === 'ON' && observed > 0 ? `${observed.toFixed(1)} A` : (c.state.state === 'ON' ? 'ON' : 'OFF');
+      }
+      return false;
+    }
+    if (m[2] === 'switch.state') {
       const observed = value === true || value === 1 || value === 'ON' || value === 'on';
       const observedState = observed ? 'ON' : 'OFF';
       const p = pending.get(nameKey(c));
@@ -623,6 +642,7 @@
     const subscribe = [{ path: 'name', policy: 'instant' }, { path: 'electrical.czone.mode.active', policy: 'instant' }];
     for (const c of circuits) {
       subscribe.push({ path: `electrical.czone.${c.slug}.switch.state`, policy: 'instant' });
+      subscribe.push({ path: `electrical.czone.${c.slug}.current`, policy: 'instant' });
       if (c.capabilities && c.capabilities.dimmer) subscribe.push({ path: `electrical.czone.${c.slug}.switch.brightness`, policy: 'instant' });
     }
     console.debug('[CZone WS] subscribing to', subscribe.length, 'exact circuit paths');
@@ -644,7 +664,6 @@
   }
 
   function connectSocket() {
-    if (status.sendingEnabled !== true) { console.debug('[CZone WS] write control disabled; not opening control WebSocket'); return; }
     if (!('WebSocket' in window)) { console.warn('[CZone WS] WebSocket unavailable'); return; }
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
     try {
@@ -693,7 +712,7 @@
 
   refreshVesselName();
   refreshOnce('initial-load').then(() => {
-    if (status.sendingEnabled === true && circuits.length) {
+    if (circuits.length) {
       connectSocket();
       sendSubscriptions();
     } else if (status.sendingEnabled === true) {
