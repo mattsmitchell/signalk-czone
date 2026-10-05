@@ -334,7 +334,7 @@
     const p = pending.get(nameKey(c));
     const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" role="img" tabindex="0" style="--cat:${color(x)}" title="${esc(x)}" aria-label="${esc(x)} category">${icon(x)}</span>`).join('');
     const disabled = p && p.kind === 'state';
-    const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && current ? current : (on?'ON':'OFF'))}</button>`;
+    const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" data-circuit-slug="${esc(c.slug)}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && current ? current : (on?'ON':'OFF'))}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
     const sending = p ? `<span class="sending">Sending…</span>` : '';
     return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><span class="arrow">›</span></div>`;
@@ -447,7 +447,15 @@
       const observed = Number(value);
       if (!Number.isFinite(observed)) { console.debug('[CZone WS] invalid current', c.name, value); return false; }
       c.state.current = observed;
-      return true;
+      // Current is high-frequency telemetry. Store every observation, but update
+      // only the existing control instead of rebuilding the whole navigation and
+      // circuit list for every packet.
+      const toggle = document.querySelector(`[data-circuit-slug="${CSS.escape(c.slug)}"]`);
+      const p = pending.get(nameKey(c));
+      if (toggle && !(p && p.kind === 'state')) {
+        toggle.textContent = c.state.state === 'ON' && observed > 0 ? `${observed.toFixed(1)} A` : (c.state.state === 'ON' ? 'ON' : 'OFF');
+      }
+      return false;
     }
     if (m[2] === 'switch.state') {
       const observed = value === true || value === 1 || value === 'ON' || value === 'on';
