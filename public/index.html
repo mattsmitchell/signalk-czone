@@ -220,6 +220,17 @@
   const SK = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/signalk/v1/stream?subscribe=none`;
   const categoryIcons = { Lighting:'💡', Navigation:'◉', Pumps:'♨', Power:'⚡', Entertainment:'♫', 'Fans/Ventilation':'✣', Electronics:'▦', Climate:'❄', Galley:'🍴', 'Deck Equipment':'⚓', Safety:'⬟', Miscellaneous:'•••' };
   const categoryColors = { Lighting:'#ffc34d', Navigation:'#54c7ff', Pumps:'#27d7d5', Power:'#b877ff', Entertainment:'#ee66d9', 'Fans/Ventilation':'#3ee0c5', Electronics:'#35b7ff', Climate:'#6cc8ff', Galley:'#ff9f58', 'Deck Equipment':'#3fc1d9', Safety:'#ff6576', Miscellaneous:'#8ea0b6' };
+  // Canonical CZone sub-category order from signalk-czone-zcf. AC, DC and Favorites
+  // are top-level filters, so they do not appear again in the category list.
+  const canonicalCategories = [
+    'House/Habitat', 'Vessel Critical', 'Navigation', 'Electronics', '24-Hour Circuits',
+    'Communications', 'Accessories', 'Indicators and Alarms', 'Engine Management',
+    'Fans/Ventilation', 'Lighting', 'Vessel Management', 'Pumps', 'Propulsion Management',
+    'Power', 'Refrigeration', 'Entertainment', 'Climate', 'Appliances', 'Other',
+    'User Definable 1', 'User Definable 2', 'User Definable 3', 'User Definable 4',
+    'User Definable 5', 'Bilge Pumps'
+  ];
+  const topLevelCategories = new Set(['AC', 'DC', 'Favorites']);
   let circuits = [], status = {}, modes = [], activeMode = null, vesselName = '', view = 'all', category = null, query = '', sort = 'name', socket = null;
   let socketReconnectTimer = null, watchdogTimer = null, lastSocketUpdateAt = 0, socketConnected = false;
   const WS_WATCHDOG_MS = 120000;
@@ -238,7 +249,12 @@
   const percentOf = c => c.state && Number.isFinite(c.state.percent) ? c.state.percent : null;
   const categoryData = c => c.categories || { master: [], sub: [], userDefined: [] };
   const allCategories = c => [...(categoryData(c).master || []), ...(categoryData(c).sub || []), ...(categoryData(c).userDefined || [])];
-  const catList = () => [...new Set(circuits.flatMap(allCategories))].sort((a,b) => a.localeCompare(b));
+  const catList = () => {
+    const assigned = new Set(circuits.flatMap(allCategories).filter(c => !topLevelCategories.has(c)));
+    const canonical = canonicalCategories.filter(c => assigned.has(c));
+    const unknown = [...assigned].filter(c => !canonicalCategories.includes(c)).sort((a,b) => a.localeCompare(b));
+    return [...canonical, ...unknown];
+  };
   const countCat = cat => circuits.filter(c => allCategories(c).includes(cat)).length;
   const activeCount = () => circuits.filter(stateOf).length;
   const masterCount = m => circuits.filter(c => (categoryData(c).master || []).includes(m)).length;
