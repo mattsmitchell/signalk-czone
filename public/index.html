@@ -89,7 +89,8 @@
     .circuit-name small { display:block; color:#738ca4; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tags { display:flex; flex-wrap:wrap; gap:4px; }
     .tag { font-size:10px; padding:4px 7px; border-radius:999px; background:#152d44; color:#bdd1e3; }
-    .tag.cat { background:color-mix(in srgb, var(--cat) 14%, #10263b); color:color-mix(in srgb, var(--cat) 82%, white); }
+    .tag.cat { width:24px; height:24px; padding:0; display:grid; place-items:center; background:color-mix(in srgb, var(--cat) 14%, #10263b); color:color-mix(in srgb, var(--cat) 82%, white); font-size:13px; cursor:help; }
+    .tag.cat[title] { user-select:none; }
     .status { display:flex; align-items:center; gap:7px; font-size:11px; color:#a7bdd1; }
     .status-dot { width:8px; height:8px; border-radius:50%; background:#6c8399; }
     .status.on { color:#64e4aa; }
@@ -218,8 +219,23 @@
 (() => {
   const API = '/plugins/signalk-czone';
   const SK = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/signalk/v1/stream?subscribe=none`;
-  const categoryIcons = { Lighting:'💡', Navigation:'◉', Pumps:'♨', Power:'⚡', Entertainment:'♫', 'Fans/Ventilation':'✣', Electronics:'▦', Climate:'❄', Galley:'🍴', 'Deck Equipment':'⚓', Safety:'⬟', Miscellaneous:'•••' };
-  const categoryColors = { Lighting:'#ffc34d', Navigation:'#54c7ff', Pumps:'#27d7d5', Power:'#b877ff', Entertainment:'#ee66d9', 'Fans/Ventilation':'#3ee0c5', Electronics:'#35b7ff', Climate:'#6cc8ff', Galley:'#ff9f58', 'Deck Equipment':'#3fc1d9', Safety:'#ff6576', Miscellaneous:'#8ea0b6' };
+  const categoryIcons = {
+    'House/Habitat':'🏠', 'Vessel Critical':'🛟', Navigation:'🧭', Electronics:'📟', '24-Hour Circuits':'🕘',
+    Communications:'📡', Accessories:'🔧', 'Indicators and Alarms':'🚨', 'Engine Management':'⚙️',
+    'Fans/Ventilation':'🌀', Lighting:'💡', 'Vessel Management':'🚢', Pumps:'💧', 'Propulsion Management':'🚤',
+    Power:'⚡', Refrigeration:'❄️', Entertainment:'🎵', Climate:'🌡️', Appliances:'🔌', Other:'•••',
+    'User Definable 1':'①', 'User Definable 2':'②', 'User Definable 3':'③', 'User Definable 4':'④',
+    'User Definable 5':'⑤', 'Bilge Pumps':'🌊'
+  };
+  const categoryColors = {
+    'House/Habitat':'#7bb8ff', 'Vessel Critical':'#ff6576', Navigation:'#54c7ff', Electronics:'#35b7ff',
+    '24-Hour Circuits':'#8ea0b6', Communications:'#58c7e8', Accessories:'#d2a85a', 'Indicators and Alarms':'#ff6576',
+    'Engine Management':'#b58cff', 'Fans/Ventilation':'#3ee0c5', Lighting:'#ffc34d', 'Vessel Management':'#55b6d9',
+    Pumps:'#27d7d5', 'Propulsion Management':'#b877ff', Power:'#b877ff', Refrigeration:'#6cc8ff',
+    Entertainment:'#ee66d9', Climate:'#6cc8ff', Appliances:'#ff9f58', Other:'#8ea0b6',
+    'User Definable 1':'#8ea0b6', 'User Definable 2':'#8ea0b6', 'User Definable 3':'#8ea0b6',
+    'User Definable 4':'#8ea0b6', 'User Definable 5':'#8ea0b6', 'Bilge Pumps':'#27d7d5'
+  };
   // Canonical CZone sub-category order from signalk-czone-zcf. AC, DC and Favorites
   // are top-level filters, so they do not appear again in the category list.
   const canonicalCategories = [
@@ -309,7 +325,7 @@
   function circuitRow(c) {
     const on = stateOf(c), pct = percentOf(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = favorites.has(nameKey(c));
     const p = pending.get(nameKey(c));
-    const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" style="--cat:${color(x)}">${esc(x)}</span>`).join('');
+    const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" style="--cat:${color(x)}" title="${esc(x)}" aria-label="${esc(x)}">${icon(x)}</span>`).join('');
     const disabled = p && p.kind === 'state';
     const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on?'ON':'OFF')}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
