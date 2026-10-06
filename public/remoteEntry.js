@@ -72,53 +72,38 @@ var signalk_czone = (function () {
       persist({ allowCzoneWrite: value })
     }
 
-    function confirmList (settingName) {
-      return (Array.isArray(configuration[settingName]) ? configuration[settingName] : [])
+    // Confirm before turning off: a list of { circuit }.
+    function confirmOffList () {
+      return (Array.isArray(configuration.confirmOff) ? configuration.confirmOff : [])
         .map(function (e) { return typeof e === 'string' ? { circuit: e } : e })
         .filter(function (e) { return e && e.circuit })
         .map(function (e) { return { circuit: e.circuit } })
     }
 
-    function addConfirm (settingName, name) {
+    function addConfirmOff (name) {
       if (!name) return
-      var next = {}
-      next[settingName] = confirmList(settingName).concat([{ circuit: name }])
-      persist(next)
+      persist({ confirmOff: confirmOffList().concat([{ circuit: name }]) })
     }
 
-    function removeConfirm (settingName, index) {
-      var next = {}
-      next[settingName] = confirmList(settingName).filter(function (_e, i) { return i !== index })
-      persist(next)
+    function removeConfirmOff (index) {
+      persist({ confirmOff: confirmOffList().filter(function (_e, i) { return i !== index }) })
     }
 
-    function confirmBox (settingName, title, description, allowName, allowLabel) {
-      var list = confirmList(settingName)
-      var names = data && Array.isArray(data.circuitNames) ? data.circuitNames : []
-      return React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
-        React.createElement('strong', null, title),
-        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, description),
-        list.map(function (e, i) {
-          var known = !names.length || names.some(function (n) { return n.trim().toLowerCase() === String(e.circuit).trim().toLowerCase() })
-          return React.createElement('div', { key: settingName + ':' + e.circuit + ':' + i, style: { marginTop: 8 } },
-            React.createElement('span', { style: { display: 'inline-block', minWidth: 170, marginRight: 8, fontWeight: 600 } }, e.circuit + (known ? '' : ' (not in this configuration)')),
-            React.createElement('button', { type: 'button', disabled: busy, onClick: function () { removeConfirm(settingName, i) } }, 'Remove')
-          )
-        }),
-        React.createElement('label', { style: { display: 'block', marginTop: 10 } }, 'Add a circuit ',
-          React.createElement('select', { value: '', disabled: busy || !names.length, onChange: function (e) { addConfirm(settingName, e.target.value) } },
-            [React.createElement('option', { key: '', value: '' }, names.length ? 'Choose a circuit' : 'Load a CZone configuration first')].concat(
-              names.filter(function (n) { return !list.some(function (e) { return String(e.circuit).trim().toLowerCase() === n.trim().toLowerCase() }) })
-                .map(function (n) { return React.createElement('option', { key: n, value: n }, n) })
-            )
-          )
-        ),
-        React.createElement('label', { style: { display: 'block', marginTop: 12 } },
-          React.createElement('input', { type: 'checkbox', checked: configuration[allowName] === true, disabled: busy || !list.length, onChange: function (e) { var next = {}; next[allowName] = e.target.checked; persist(next) } }),
-          ' ' + allowLabel
-        ),
-        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Other Signal K apps use PUT and cannot show this confirmation. Unticked, matching requests from them are refused. CZone keypads, displays and modes are not affected.')
-      )
+    // Confirm before turning on: deliberately parallel to the tested OFF list.
+    function confirmOnList () {
+      return (Array.isArray(configuration.confirmOn) ? configuration.confirmOn : [])
+        .map(function (e) { return typeof e === 'string' ? { circuit: e } : e })
+        .filter(function (e) { return e && e.circuit })
+        .map(function (e) { return { circuit: e.circuit } })
+    }
+
+    function addConfirmOn (name) {
+      if (!name) return
+      persist({ confirmOn: confirmOnList().concat([{ circuit: name }]) })
+    }
+
+    function removeConfirmOn (index) {
+      persist({ confirmOn: confirmOnList().filter(function (_e, i) { return i !== index }) })
     }
 
     function chooseSource (value) {
@@ -272,8 +257,57 @@ var signalk_czone = (function () {
         read && read.status === 'complete' ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Saved: ' + (read.file || 'CZone network configuration')) : null
       ),
 
-      confirmBox('confirmOn', 'Confirm before turning on', 'Choose circuits where an accidental ON could be undesirable. The CZone webapp asks before sending the ON command.', 'confirmOnAllowElsewhere', 'Let other apps turn these circuits on'),
-      confirmBox('confirmOff', 'Confirm before turning off', 'Choose circuits that must not go off by a slip of a finger, such as refrigeration, instruments, network or server power.', 'confirmOffAllowElsewhere', 'Let other apps turn these circuits off'),
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'Confirm before turning on'),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'For circuits where an accidental ON could be undesirable. The webapp asks "are you sure?" before turning one of these on. CZone keypads, displays and modes are not affected.'),
+        confirmOnList().map(function (e, i) {
+          var known = !data || !Array.isArray(data.circuitNames) || data.circuitNames.some(function (n) { return n.trim().toLowerCase() === String(e.circuit).trim().toLowerCase() })
+          return React.createElement('div', { key: e.circuit + ':' + i, style: { marginTop: 8 } },
+            React.createElement('span', { style: { display: 'inline-block', minWidth: 170, marginRight: 8, fontWeight: 600 } }, e.circuit + (known ? '' : ' (not in this configuration)')),
+            React.createElement('button', { type: 'button', disabled: busy, onClick: function () { removeConfirmOn(i) } }, 'Remove')
+          )
+        }),
+        React.createElement('label', { style: { display: 'block', marginTop: 10 } }, 'Add a circuit ',
+          React.createElement('select', { value: '', disabled: busy || !data || !Array.isArray(data.circuitNames) || !data.circuitNames.length, onChange: function (e) { addConfirmOn(e.target.value) } },
+            [React.createElement('option', { key: '', value: '' }, data && Array.isArray(data.circuitNames) && data.circuitNames.length ? 'Choose a circuit' : 'Load a CZone configuration first')].concat(
+              (data && Array.isArray(data.circuitNames) ? data.circuitNames : [])
+                .filter(function (n) { return !confirmOnList().some(function (e) { return String(e.circuit).trim().toLowerCase() === n.trim().toLowerCase() }) })
+                .map(function (n) { return React.createElement('option', { key: n, value: n }, n) })
+            )
+          )
+        ),
+        React.createElement('label', { style: { display: 'block', marginTop: 12 } },
+          React.createElement('input', { type: 'checkbox', checked: configuration.confirmOnAllowElsewhere === true, disabled: busy || !confirmOnList().length, onChange: function (e) { persist({ confirmOnAllowElsewhere: e.target.checked }) } }),
+          ' Let other apps turn these circuits on'
+        ),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Other Signal K apps switch with a PUT and cannot ask "are you sure?". Unticked, an on from them is refused with a message. The circuit can still be turned on from the webapp or a CZone keypad.')
+      ),
+
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'Confirm before turning off'),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'For circuits that must not go off by a slip of a finger: freezers and fridges, instruments, anything that powers the Signal K server, the network or a display. The webapp asks "are you sure?" before turning one of these off. Turning on is never held up. CZone keypads, displays and modes are not affected.'),
+        confirmOffList().map(function (e, i) {
+          var known = !data || !Array.isArray(data.circuitNames) || data.circuitNames.some(function (n) { return n.trim().toLowerCase() === String(e.circuit).trim().toLowerCase() })
+          return React.createElement('div', { key: e.circuit + ':' + i, style: { marginTop: 8 } },
+            React.createElement('span', { style: { display: 'inline-block', minWidth: 170, marginRight: 8, fontWeight: 600 } }, e.circuit + (known ? '' : ' (not in this configuration)')),
+            React.createElement('button', { type: 'button', disabled: busy, onClick: function () { removeConfirmOff(i) } }, 'Remove')
+          )
+        }),
+        React.createElement('label', { style: { display: 'block', marginTop: 10 } }, 'Add a circuit ',
+          React.createElement('select', { value: '', disabled: busy || !data || !Array.isArray(data.circuitNames) || !data.circuitNames.length, onChange: function (e) { addConfirmOff(e.target.value) } },
+            [React.createElement('option', { key: '', value: '' }, data && Array.isArray(data.circuitNames) && data.circuitNames.length ? 'Choose a circuit' : 'Load a CZone configuration first')].concat(
+              (data && Array.isArray(data.circuitNames) ? data.circuitNames : [])
+                .filter(function (n) { return !confirmOffList().some(function (e) { return String(e.circuit).trim().toLowerCase() === n.trim().toLowerCase() }) })
+                .map(function (n) { return React.createElement('option', { key: n, value: n }, n) })
+            )
+          )
+        ),
+        React.createElement('label', { style: { display: 'block', marginTop: 12 } },
+          React.createElement('input', { type: 'checkbox', checked: configuration.confirmOffAllowElsewhere === true, disabled: busy || !confirmOffList().length, onChange: function (e) { persist({ confirmOffAllowElsewhere: e.target.checked }) } }),
+          ' Let other apps turn these circuits off'
+        ),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Other Signal K apps switch with a PUT and cannot ask "are you sure?". Unticked, an off from them is refused with a message. The circuit can still be turned off from the webapp or a CZone keypad.')
+      ),
 
       current ? React.createElement('div', { style: { fontSize: 12 } }, 'Currently loaded: ' + (current.vesselName || current.fileName) + ' · ' + current.circuits + ' circuits · ' + current.modes + ' modes') : null,
       error ? React.createElement('div', { role: 'alert', style: { marginTop: 9 } }, 'Error: ' + error) : null
