@@ -111,6 +111,16 @@
     input[type=range] { accent-color:#38a9ff; width:100%; cursor:pointer; }
     .percent { min-width:38px; text-align:right; font-size:11px; color:#c3d7e8; }
     .arrow { color:#59738b; font-size:19px; }
+    .ask-mark { color:#e6b450; margin-left:7px; }
+    .ask-mark svg { width:13px; height:13px; vertical-align:-1px; fill:none; stroke:currentColor; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
+    .ask { position:fixed; top:0; right:0; bottom:0; left:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(2,8,16,.72); }
+    .ask-box { width:100%; max-width:420px; padding:22px 22px 18px; border:1px solid rgba(148,193,235,.28); border-radius:16px; background:#0f2237; box-shadow:0 18px 60px rgba(0,0,0,.55); }
+    .ask-box h3 { margin:0; font-size:19px; color:#fff; }
+    .ask-buttons { display:flex; margin-top:18px; }
+    .ask-buttons button { flex:1 1 0; min-height:46px; border-radius:12px; border:1px solid rgba(148,193,235,.25); font-size:15px; font-weight:700; cursor:pointer; }
+    .ask-buttons .ask-no { margin-right:12px; background:#1b4a73; color:#fff; }
+    .ask-buttons .ask-yes { background:#3a1620; border-color:rgba(255,120,120,.45); color:#ffb4b4; }
+    .ask-buttons .ask-yes:disabled { opacity:.45; cursor:default; }
     .empty { padding:42px 20px; text-align:center; color:var(--muted); }
     .right-card { border:1px solid var(--line); border-radius:16px; background:rgba(10,29,47,.72); padding:16px; margin-bottom:13px; }
     .right-card h3 { margin:0 0 15px; font-size:15px; }
@@ -329,6 +339,13 @@
     document.querySelector('#circuits').innerHTML = list.length ? list.map(circuitRow).join('') : `<div class="empty">No circuits match this view.</div>`;
   }
 
+  const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  function askMark(c) {
+    if (!c.confirmOn && !c.confirmOff) return '';
+    const actions = c.confirmOn && c.confirmOff ? 'turning on or off' : (c.confirmOn ? 'turning on' : 'turning off');
+    return `<span class="ask-mark" title="Asks before ${actions}">${LOCK_SVG}</span>`;
+  }
+
   function circuitRow(c) {
     const on = stateOf(c), pct = percentOf(c), current = currentLabel(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = favorites.has(nameKey(c));
     const p = pending.get(nameKey(c));
@@ -337,7 +354,7 @@
     const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" data-circuit-slug="${esc(c.slug)}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && current ? current : (on?'ON':'OFF'))}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
     const sending = p ? `<span class="sending">Sending…</span>` : '';
-    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><span class="arrow">›</span></div>`;
+    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}${askMark(c)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><span class="arrow">›</span></div>`;
   }
 
   function previewPercent(el) { const out=el.parentElement.querySelector('.percent'); out.textContent=el.value+'%'; }
@@ -559,14 +576,58 @@
     }
   }
 
-  window.toggleCircuit = (name, on) => {
+  let closeAsk = null;
+  function askSwitch(c, on) {
+    return new Promise(resolve => {
+      if (closeAsk) closeAsk(false);
+      const action = on ? 'Turn on' : 'Turn off';
+      const cancel = on ? 'Keep off' : 'Keep on';
+      const el = document.createElement('div');
+      el.className = 'ask';
+      el.innerHTML = `<div class="ask-box" role="alertdialog" aria-modal="true" aria-labelledby="askTitle"><h3 id="askTitle">${action} ${esc(c.name.trim())}?</h3><div class="ask-buttons"><button type="button" class="ask-no">${cancel}</button><button type="button" class="ask-yes" disabled>${action}</button></div></div>`;
+      const onKey = e => { if (e.key === 'Escape') done(false); };
+      const done = v => { document.removeEventListener('keydown', onKey, true); el.remove(); closeAsk = null; resolve(v); };
+      el.addEventListener('click', e => {
+        if (e.target === el || e.target.closest('.ask-no')) done(false);
+        else if (e.target.closest('.ask-yes') && !el.querySelector('.ask-yes').disabled) done(true);
+      });
+      document.addEventListener('keydown', onKey, true);
+      closeAsk = done;
+      document.body.appendChild(el);
+      el.querySelector('.ask-no').focus();
+      setTimeout(() => { const b = el.querySelector('.ask-yes'); if (b) b.disabled = false; }, 500);
+    });
+  }
+
+  async function postConfirmedSwitch(circuit, on, previous) {
+    const requested = on ? 'ON' : 'OFF';
+    setPending(circuit, 'state', requested, previous);
+    render();
+    try {
+      const r = await fetch(`${API}/circuits/${encodeURIComponent(circuit.slug)}/${on ? 'on' : 'off'}?confirm=1`, { method:'POST', credentials:'include' });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `Command failed (HTTP ${r.status})`);
+      console.debug('[CZone UI] confirmed switch accepted', circuit.name, requested);
+      startPendingReconciliation(circuit, 'state');
+      render();
+    } catch (e) {
+      rollbackPending(circuit, 'state');
+      render();
+      alert(e.message);
+    }
+  }
+
+  window.toggleCircuit = (name, on, confirmed) => {
     if (status.sendingEnabled !== true) { alert('CZone write control is disabled. Enable “Enable CZone read/write control” in Plugin Config first.'); return; }
     const c = circuits.find(x => x.name === decodeURIComponent(name)); if (!c) return;
     const existing = pending.get(nameKey(c));
     if (existing && existing.kind === 'state') { console.debug('[CZone UI] duplicate state click ignored', c.name); return; }
+    const requiresConfirm = on ? c.confirmOn : c.confirmOff;
+    if (requiresConfirm && !confirmed) { askSwitch(c, on).then(ok => { if (ok) window.toggleCircuit(name, on, true); }); return; }
     c.state = c.state || {};
     const previous = c.state.state || 'OFF';
     c.state.state = on ? 'ON' : 'OFF';
+    if (requiresConfirm) { postConfirmedSwitch(c, on, previous); return; }
     putSignalK(signalKPath(c, 'state'), on, c, 'state', on ? 'ON' : 'OFF', previous);
   };
   window.setLevel = (name, value) => {
