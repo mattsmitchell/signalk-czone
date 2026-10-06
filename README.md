@@ -81,6 +81,23 @@ Only the installed path is stored in plugin configuration; the binary file is no
 
 Signal K plugin routes registered directly with `registerWithRouter()` are admin-only by default, which is appropriate for changing the vessel's CZone configuration.
 
+## Confirm before switching circuits
+
+The plugin can nominate circuits that require an **Are you sure?** prompt before turning **on**, **off**, or both. Configure the two lists independently under **Confirm before turning on** and **Confirm before turning off**.
+
+The CZone webapp shows a padlock beside nominated circuits and asks before sending the protected action. The confirmation button is disabled briefly to avoid a double tap accidentally confirming the change.
+
+Signal K PUT requests cannot carry proof that a user saw the prompt. By default, a protected ON/OFF request from another app is refused. The two **Let other apps...** settings can independently allow external ON or OFF requests. CZone keypads, displays and modes are not affected.
+
+After confirmation the webapp uses:
+
+```text
+POST /plugins/signalk-czone/circuits/<slug>/on?confirm=1
+POST /plugins/signalk-czone/circuits/<slug>/off?confirm=1
+```
+
+Without confirmation, the protected route responds with HTTP `409` and `needsConfirm: true`. Dimmer level 0 is treated as OFF.
+
 ## AC 130817
 
 Observed CZone format:
