@@ -846,7 +846,9 @@ module.exports = function (app) {
       decodeCzoneCircuitStatus(frame)
       return
     }
-    if (frame.pgn === 130822 || frame.pgn === 130817) {
+    // 130822 (DC), 130817 (AC / Output Interface) and 130825 (Control X PLUS)
+    // are all Fast Packet current tables for decodeCurrentPacket().
+    if (nmea.isCzoneCurrentPgn(frame.pgn)) {
       if (!reassembler) return
       reassembler.accept(frame)
     }
