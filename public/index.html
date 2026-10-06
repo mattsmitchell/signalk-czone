@@ -630,13 +630,25 @@
     if (requiresConfirm) { postConfirmedSwitch(c, on, previous); return; }
     putSignalK(signalKPath(c, 'state'), on, c, 'state', on ? 'ON' : 'OFF', previous);
   };
-  window.setLevel = (name, value) => {
+  window.setLevel = (name, value, confirmed) => {
     if (status.sendingEnabled !== true) { alert('CZone write control is disabled. Enable “Enable CZone read/write control” in Plugin Config first.'); return; }
     const c = circuits.find(x => x.name === decodeURIComponent(name)); if (!c) return;
     c.state = c.state || {};
     const requested = Math.max(10, Number(value));
     const previous = Number.isFinite(c.state.percent) ? c.state.percent : 100;
+    const switchesOn = c.state.state !== 'ON';
+    if (switchesOn && c.confirmOn && !confirmed) {
+      askSwitch(c, true).then(ok => { if (ok) window.setLevel(name, value, true); });
+      return;
+    }
     c.state.percent = requested;
+    if (switchesOn && c.confirmOn) {
+      fetch(`${API}/circuits/${encodeURIComponent(c.slug)}/level?confirm=1`, {
+        method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify({percent:requested, confirm:true})
+      }).then(async r => { const data=await r.json(); if(!r.ok) throw new Error(data.error || `Command failed (HTTP ${r.status})`); })
+        .catch(e => { c.state.percent=previous; render(); alert(e.message); });
+      return;
+    }
     putSignalK(signalKPath(c, 'brightness'), requested / 100, c, 'brightness', requested, previous);
   };
   window.toggleFavorite = key => { favorites.has(key) ? favorites.delete(key) : favorites.add(key); saveFavorites(); render(); };
