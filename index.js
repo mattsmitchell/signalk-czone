@@ -505,8 +505,11 @@ module.exports = function (app) {
               return { state: 'COMPLETED', statusCode: 400, message: 'switch.brightness requires a number between 0 and 1' }
             }
             try {
-              if (normalized <= 0) refuseUnconfirmedSwitch(circuitByName(circuit.slug), false)
-              sendCircuitBrightness(circuitByName(circuit.slug), normalized)
+              const target = circuitByName(circuit.slug)
+              const state = runtimeState.get(circuit.name)
+              if (normalized <= 0) refuseUnconfirmedSwitch(target, false)
+              else if (!state || state.state !== 'ON') refuseUnconfirmedSwitch(target, true)
+              sendCircuitBrightness(target, normalized)
               const state = runtimeState.get(circuit.name)
               if (state) state.lastRequestedPercent = Math.round(normalized * 100)
               return { state: 'COMPLETED', statusCode: 200 }
@@ -1447,6 +1450,8 @@ module.exports = function (app) {
           const circuit = circuitByName(req.params.name)
           const percent = Number(req.body && req.body.percent)
           if (percent <= 0 && needsConfirm(circuit, false, req, res)) return
+          const currentState = runtimeState.get(circuit.name)
+          if (percent > 0 && (!currentState || currentState.state !== 'ON') && needsConfirm(circuit, true, req, res)) return
           if (circuit.capabilities.dimmer) {
             const commands = []
             const state = runtimeState.get(circuit.name)
