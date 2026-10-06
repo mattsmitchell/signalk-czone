@@ -31,6 +31,9 @@ var signalk_czone = (function () {
     var uploadState = React.useState(null)
     var uploadFile = uploadState[0]
     var setUploadFile = uploadState[1]
+    var trendState = React.useState(null)
+    var trend = trendState[0]
+    var setTrend = trendState[1]
 
     function loadConfiguration () {
       return fetch('/plugins/signalk-czone/configuration', { credentials: 'same-origin', cache: 'no-store' })
@@ -44,8 +47,19 @@ var signalk_czone = (function () {
         })
     }
 
+    function loadTrendStatus () {
+      return fetch('/plugins/signalk-czone/trend/status', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null })
+        .then(function (value) { setTrend(value) })
+        .catch(function () {})
+    }
+
     React.useEffect(function () {
       loadConfiguration().catch(function (err) { setError(err.message || String(err)) })
+      loadTrendStatus()
+      // Saving a trend setting restarts the plugin; show where trends go now.
+      var timer = setInterval(loadTrendStatus, 5000)
+      return function () { clearInterval(timer) }
     }, [])
 
     React.useEffect(function () {
@@ -114,6 +128,18 @@ var signalk_czone = (function () {
       } else if (selected) {
         persist({ configurationSource: 'networkCache', networkConfigFile: selected })
       }
+    }
+
+    // Where trends are going, or why they are off.
+    function trendSummary () {
+      if (configuration.trendsEnabled === false) return 'Switched off.'
+      if (!trend) return 'Checking…'
+      if (!trend.available) return 'Trends off: ' + (trend.detail || trend.reason || 'no storage')
+      var where = trend.location === 'removable' ? 'on the SD card or USB stick at ' + trend.mount
+        : trend.location === 'data_dir' ? 'in the plugin data folder'
+          : 'in ' + trend.dir
+      var free = typeof trend.freeBytes === 'number' ? ' · ' + (trend.freeBytes / 1073741824).toFixed(1) + ' GB free' : ''
+      return 'Recording ' + trend.trending + ' circuit' + (trend.trending === 1 ? '' : 's') + ' every ' + trend.sampleSeconds + ' s ' + where + free
     }
 
     function useSelected () {
@@ -307,6 +333,31 @@ var signalk_czone = (function () {
           ' Let other apps turn these circuits off'
         ),
         React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Other Signal K apps switch with a PUT and cannot ask "are you sure?". Unticked, an off from them is refused with a message. The circuit can still be turned off from the webapp or a CZone keypad.')
+      ),
+
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'Trends'),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Stores each circuit\'s current every 10 seconds as plain CSV files, for the trend charts in the webapp (the arrow at the end of a circuit row).'),
+        React.createElement('div', { style: { marginTop: 9 } },
+          React.createElement('label', null,
+            React.createElement('input', { type: 'checkbox', checked: configuration.trendsEnabled !== false, disabled: busy, onChange: function (e) { persist({ trendsEnabled: e.target.checked }) } }),
+            ' Record circuit current trends'
+          )
+        ),
+        React.createElement('div', { id: 'czone-trend-status', style: { marginTop: 6, fontSize: 12 } }, trendSummary()),
+        React.createElement('label', { style: { display: 'block', marginTop: 10 } }, 'Trend folder (optional) ',
+          React.createElement('input', { type: 'text', style: { width: '60%' }, placeholder: 'Automatic', defaultValue: configuration.trendDirectory || '', disabled: busy, onBlur: function (e) { var value = (e.target.value || '').trim(); if (value !== (configuration.trendDirectory || '')) persist({ trendDirectory: value }) } })
+        ),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Blank = automatic. On a Victron GX trends go to an SD card or USB stick, never to internal flash. On a Pi or PC they go to the plugin data folder.'),
+        React.createElement('label', { style: { display: 'block', marginTop: 10 } }, 'Keep full-detail trend data for ',
+          React.createElement('select', { value: String(configuration.trendRetentionDays || 0), disabled: busy, onChange: function (e) { persist({ trendRetentionDays: Number(e.target.value) }) } },
+            React.createElement('option', { value: '0' }, 'Until the storage is nearly full'),
+            React.createElement('option', { value: '31' }, '31 days'),
+            React.createElement('option', { value: '90' }, '90 days'),
+            React.createElement('option', { value: '365' }, '1 year')
+          )
+        ),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Ten-minute summaries are kept regardless. When storage runs low the oldest full-detail days are removed first, so recording never stops.')
       ),
 
       current ? React.createElement('div', { style: { fontSize: 12 } }, 'Currently loaded: ' + (current.vesselName || current.fileName) + ' · ' + current.circuits + ' circuits · ' + current.modes + ' modes') : null,
