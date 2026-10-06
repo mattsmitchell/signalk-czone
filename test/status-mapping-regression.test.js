@@ -42,10 +42,13 @@ function assertMappingShape (filename, circuit) {
   assert(circuit.statusSource, filename + ': ' + circuit.name + ' mapped circuit must identify its source')
 
   if (circuit.statusSource === 'primary-module-channel') {
-    const output = circuit.primaryOutput || circuit.ownOutputs?.[0] || circuit.outputs?.[0]
-    assert(output, filename + ': ' + circuit.name + ' fallback requires a physical output')
-    assert.strictEqual(circuit.statusModule, output.module, filename + ': ' + circuit.name + ' fallback module')
-    assert.strictEqual(circuit.statusBit, output.channel, filename + ': ' + circuit.name + ' fallback bit')
+    // The parser fallback is defined from the first structural output. Do not
+    // assume that is the same as primaryOutput: output-ownership processing can
+    // select a different primary identity for current/presentation purposes.
+    const output = circuit.outputs?.[0]
+    assert(output, filename + ': ' + circuit.name + ' fallback requires a structural output')
+    assert.strictEqual(circuit.statusModule, output.module, filename + ': ' + circuit.name + ' fallback structural module')
+    assert.strictEqual(circuit.statusBit, output.channel, filename + ': ' + circuit.name + ' fallback structural bit')
     assert.strictEqual(circuit.statusConfidence, 'primary-module-channel-fallback', filename + ': ' + circuit.name + ' fallback confidence')
   }
 
@@ -83,7 +86,13 @@ async function main () {
       statusOutput: groups['status-output'].length,
       fallback: groups['primary-module-channel'].length,
       unmapped: groups.unmapped.length,
-      fallbackCircuits: groups['primary-module-channel'].map(c => c.name),
+      fallbackCircuits: groups['primary-module-channel'].map(c => ({
+        name: c.name,
+        status: `${c.statusModule}:${c.statusBit}`,
+        firstOutput: c.outputs?.[0] ? `${c.outputs[0].module}:${c.outputs[0].channel}` : null,
+        primaryOutput: c.primaryOutput ? `${c.primaryOutput.module}:${c.primaryOutput.channel}` : null,
+        outputs: (c.outputs || []).map(output => `${output.module}:${output.channel}`)
+      })),
       unmappedCircuits: groups.unmapped.map(c => c.name)
     })
   }
@@ -105,7 +114,17 @@ async function main () {
       'status-name=' + report.statusName + ', status-output=' + report.statusOutput +
       ', fallback=' + report.fallback + ', unmapped=' + report.unmapped
     )
-    if (report.fallbackCircuits.length) console.log('  fallback: ' + report.fallbackCircuits.join(', '))
+    if (report.fallbackCircuits.length) {
+      for (const circuit of report.fallbackCircuits) {
+        console.log(
+          '  fallback: ' + circuit.name +
+          ' status=' + circuit.status +
+          ' first=' + circuit.firstOutput +
+          ' primary=' + circuit.primaryOutput +
+          ' outputs=[' + circuit.outputs.join(',') + ']'
+        )
+      }
+    }
     if (report.unmappedCircuits.length) console.log('  unmapped: ' + report.unmappedCircuits.join(', '))
   }
 
