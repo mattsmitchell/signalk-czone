@@ -101,6 +101,21 @@ Without `confirm=1` (or `{"confirm": true}` in the body) the protected route ans
 
 Settings: `confirmOff` and `confirmOn` are lists of `{ "circuit": "<name>" }`, matched by circuit name or slug without regard to case. `confirmOffAllowElsewhere` and `confirmOnAllowElsewhere` are independent booleans, both defaulting to `false`.
 
+### Configuration
+
+Open **Server → Plugin Config → CZone**. The two nomination lists are independent:
+
+- **Confirm before turning on** — add circuits where an accidental ON should require confirmation.
+- **Confirm before turning off** — add circuits where an accidental OFF should require confirmation.
+
+Choose a circuit from **Add a circuit** to nominate it; use **Remove** to remove a nomination. There is no separate Save button: each add/remove is persisted immediately.
+
+Each list also has its own **Let other apps turn these circuits on/off** option. Leave it unticked to reject unconfirmed Signal K PUTs for that protected action; tick it when another Signal K app must be allowed to perform that action without presenting the CZone webapp confirmation.
+
+Open CZone webapp pages update automatically when either nomination list changes. The plugin publishes a settings revision when the changed configuration is applied; connected pages receive it over their existing Signal K WebSocket connection and immediately re-read the circuit list. Padlocks and confirmation behaviour therefore update without reloading the page.
+
+A circuit may be nominated in either list or in both.
+
 ## AC 130817
 
 Observed CZone format:
