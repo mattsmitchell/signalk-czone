@@ -81,22 +81,25 @@ Only the installed path is stored in plugin configuration; the binary file is no
 
 Signal K plugin routes registered directly with `registerWithRouter()` are admin-only by default, which is appropriate for changing the vessel's CZone configuration.
 
-## Confirm before switching circuits
+## Confirm before turning on or off
 
-The plugin can nominate circuits that require an **Are you sure?** prompt before turning **on**, **off**, or both. Configure the two lists independently under **Confirm before turning on** and **Confirm before turning off**.
+Some circuits must not go off by a slip of a finger: a freezer, the instruments, or the circuit that powers the Signal K server, the network or the display in use. Other circuits may also need protection against an accidental ON. The ZCF does not say which circuits need either protection, so they are nominated independently in the plugin configuration panel under **Confirm before turning off** and **Confirm before turning on**.
 
-The CZone webapp shows a padlock beside nominated circuits and asks before sending the protected action. The confirmation button is disabled briefly to avoid a double tap accidentally confirming the change.
+A nominated circuit shows a padlock after its name in the webapp. Before the protected action, the webapp asks "Turn off …?" with **Keep on** / **Turn off**, or "Turn on …?" with **Keep off** / **Turn on**, before sending anything.
 
-Signal K PUT requests cannot carry proof that a user saw the prompt. By default, a protected ON/OFF request from another app is refused. The two **Let other apps...** settings can independently allow external ON or OFF requests. CZone keypads, displays and modes are not affected.
+A Signal K PUT carries only the value and cannot say that the user was asked. By default, a protected ON or OFF PUT is answered with status 400 and nothing is sent to CZone. The independent **Let other apps turn these circuits on/off** settings can allow those PUTs where required.
 
-After confirmation the webapp uses:
+CZone keypads and displays are not affected, and neither are modes: a mode switches what the CZone configuration says it switches.
 
-```text
-POST /plugins/signalk-czone/circuits/<slug>/on?confirm=1
-POST /plugins/signalk-czone/circuits/<slug>/off?confirm=1
-```
+After the user confirms, the webapp uses the plugin's own route:
 
-Without confirmation, the protected route responds with HTTP `409` and `needsConfirm: true`. Dimmer level 0 is treated as OFF.
+`POST /plugins/signalk-czone/circuits/<slug>/on?confirm=1`
+
+`POST /plugins/signalk-czone/circuits/<slug>/off?confirm=1`
+
+Without `confirm=1` (or `{"confirm": true}` in the body) the protected route answers `409` with `{"needsConfirm": true}`. A dimmer level of 0 is treated as OFF; a positive dimmer level while the circuit is OFF (or its state has not yet been observed) is treated as ON.
+
+Settings: `confirmOff` and `confirmOn` are lists of `{ "circuit": "<name>" }`, matched by circuit name or slug without regard to case. `confirmOffAllowElsewhere` and `confirmOnAllowElsewhere` are independent booleans, both defaulting to `false`.
 
 ## AC 130817
 
