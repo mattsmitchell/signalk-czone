@@ -80,4 +80,78 @@ assert.strictEqual(
   assert.strictEqual(packets.length, before)
 }
 
-console.log('Control X PLUS 130825 tests passed')
+// The plugin end to end: Control X PLUS frames as they arrive from Signal K
+// must reach the decoder and come out as circuit current. Frames captured on
+// Compass Rose (3 Oct 2026): module 1 page 0 with Freezer (channel 2) drawing
+// 3.1 A, and module 2 page 0 with Lights (channel 4) off, then on at 0.5 A.
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+const pluginFactory = require('../index')
+
+const fixtureName = 'Compass-Rose-28.06.26.zcf'
+const fixtureUrl = 'https://raw.githubusercontent.com/mattsmitchell/signalk-czone-zcf/main/test/fixtures/' + fixtureName
+
+async function fixture () {
+  const local = path.join(__dirname, 'fixtures', fixtureName)
+  if (fs.existsSync(local)) return fs.readFileSync(local)
+  const response = await fetch(fixtureUrl)
+  assert.strictEqual(response.ok, true, fixtureName + ': canonical fixture download failed (' + response.status + ')')
+  return Buffer.from(await response.arrayBuffer())
+}
+
+async function pluginTest () {
+  const configPath = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-cxp-'))
+  const dir = path.join(configPath, 'plugin-config-data', 'signalk-czone')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'installation.zcf'), await fixture())
+  const listeners = new Map()
+  const current = new Map()
+  const app = {
+    config: { configPath },
+    isNmea2000OutAvailable: true,
+    on: (event, fn) => listeners.set(event, fn),
+    removeListener: event => listeners.delete(event),
+    emit: () => {},
+    debug: () => {},
+    registerPutHandler: () => {},
+    handleMessage: (_id, delta) => { for (const v of delta.updates[0].values) if (v.path.endsWith('.current')) current.set(v.path, v.value) },
+    setPluginStatus: () => {}
+  }
+  const plugin = pluginFactory(app)
+  plugin.start({})
+  const bus = lines => { for (const line of lines) listeners.get('canboatjs:rawoutput')('2026-10-03T00:00:00.000Z R ' + line) }
+
+  bus([
+    '1DFF0900 20 1B 27 99 01 00 00 00',
+    '1DFF0900 21 00 00 00 00 F0 01 F4',
+    '1DFF0900 22 01 00 7D 00 00 00 00',
+    '1DFF0900 23 00 00 00 00 00 00 00'
+  ])
+  assert.strictEqual(current.get('electrical.czone.Freezer.current'), 3.1)
+
+  bus([
+    '1DFF0902 20 1B 27 99 02 00 00 00',
+    '1DFF0902 21 40 1F 00 D0 17 00 00',
+    '1DFF0902 22 00 00 00 00 00 40 00',
+    '1DFF0902 23 D0 07 00 00 00 00 00'
+  ])
+  assert.strictEqual(current.get('electrical.czone.Lights.current'), 0)
+  bus([
+    '1DFF0902 40 1B 27 99 02 00 00 00',
+    '1DFF0902 41 40 1F 00 D0 17 00 00',
+    '1DFF0902 42 00 00 00 05 40 5F 00',
+    '1DFF0902 43 D0 07 00 00 00 00 00'
+  ])
+  assert.strictEqual(current.get('electrical.czone.Lights.current'), 0.5)
+
+  // The same bytes under a PGN that is not a current table are left alone.
+  const before = current.size
+  current.clear()
+  bus(['1CFF0900 20 1B 27 99 01 00 00 00', '1CFF0900 21 00 00 00 00 F0 01 F4', '1CFF0900 22 01 00 7D 00 00 00 00', '1CFF0900 23 00 00 00 00 00 00 00'])
+  assert.strictEqual(current.size, 0)
+  assert(before > 0)
+  plugin.stop()
+}
+
+pluginTest().then(() => console.log('Control X PLUS 130825 tests passed')).catch(err => { console.error(err); process.exit(1) })
