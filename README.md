@@ -81,6 +81,41 @@ Only the installed path is stored in plugin configuration; the binary file is no
 
 Signal K plugin routes registered directly with `registerWithRouter()` are admin-only by default, which is appropriate for changing the vessel's CZone configuration.
 
+## Confirm before turning on or off
+
+Some circuits must not go off by a slip of a finger: a freezer, the instruments, or the circuit that powers the Signal K server, the network or the display in use. Other circuits may also need protection against an accidental ON. The ZCF does not say which circuits need either protection, so they are nominated independently in the plugin configuration panel under **Confirm before turning off** and **Confirm before turning on**.
+
+A nominated circuit shows a padlock after its name in the webapp. Before the protected action, the webapp asks "Turn off …?" with **Keep on** / **Turn off**, or "Turn on …?" with **Keep off** / **Turn on**, before sending anything.
+
+A Signal K PUT carries only the value and cannot say that the user was asked. By default, a protected ON or OFF PUT is answered with status 400 and nothing is sent to CZone. The independent **Let other apps turn these circuits on/off** settings can allow those PUTs where required.
+
+CZone keypads and displays are not affected, and neither are modes: a mode switches what the CZone configuration says it switches.
+
+After the user confirms, the webapp uses the plugin's own route:
+
+`POST /plugins/signalk-czone/circuits/<slug>/on?confirm=1`
+
+`POST /plugins/signalk-czone/circuits/<slug>/off?confirm=1`
+
+Without `confirm=1` (or `{"confirm": true}` in the body) the protected route answers `409` with `{"needsConfirm": true}`. A dimmer level of 0 is treated as OFF; a positive dimmer level while the circuit is OFF (or its state has not yet been observed) is treated as ON.
+
+Settings: `confirmOff` and `confirmOn` are lists of `{ "circuit": "<name>" }`, matched by circuit name or slug without regard to case. `confirmOffAllowElsewhere` and `confirmOnAllowElsewhere` are independent booleans, both defaulting to `false`.
+
+### Configuration
+
+Open **Server → Plugin Config → CZone**. The two nomination lists are independent:
+
+- **Confirm before turning on** — add circuits where an accidental ON should require confirmation.
+- **Confirm before turning off** — add circuits where an accidental OFF should require confirmation.
+
+Choose a circuit from **Add a circuit** to nominate it; use **Remove** to remove a nomination. There is no separate Save button: each add/remove is persisted immediately.
+
+Each list also has its own **Let other apps turn these circuits on/off** option. Leave it unticked to reject unconfirmed Signal K PUTs for that protected action; tick it when another Signal K app must be allowed to perform that action without presenting the CZone webapp confirmation.
+
+Open CZone webapp pages update automatically when either nomination list changes. The plugin publishes a settings revision when the changed configuration is applied; connected pages receive it over their existing Signal K WebSocket connection and immediately re-read the circuit list. Padlocks and confirmation behaviour therefore update without reloading the page.
+
+A circuit may be nominated in either list or in both.
+
 ## AC 130817
 
 Observed CZone format:

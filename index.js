@@ -7,6 +7,7 @@ const czone = require('./lib/czone')
 const nmea = require('./lib/nmea2000')
 const monitoring = require('./lib/monitoring')
 const signalk = require('./lib/signalk')
+const confirmOffLib = require('./lib/confirm-off')
 
 const MAX_UPLOAD_BYTES = 1024 * 1024
 const CZONE_CONFIG_BLOCK_HEADER = 23
@@ -118,6 +119,9 @@ module.exports = function (app) {
   let configTransferTimer = null
   let configFastPacket = null
   let lastNetworkConfig = null
+  // Circuits nominated to confirm before switching, by circuit name.
+  let confirmOff = new Set()
+  let confirmOn = new Set()
 
   const configRoot = app.config && app.config.configPath
     ? path.join(app.config.configPath, 'plugin-config-data')
@@ -205,6 +209,52 @@ module.exports = function (app) {
       throw new Error(`Circuit "${circuit.name}" is not yet marked controllable`)
     }
     return circuit.protocolCircuitId
+  }
+
+  // Confirm before off (see lib/confirm-off.js).
+  function loadConfirmOff () {
+    const r = confirmOffLib.confirmOffFor(settings, mapping ? mapping.circuits : [])
+    confirmOff = r.marked
+    if (confirmOff.size) log(`Confirm before off: ${[...confirmOff].map(n => n.trim()).join(', ')}`)
+    if (r.unknown.length) log(`Confirm before off: no circuit named ${r.unknown.join(', ')} in this configuration`)
+  }
+
+  function loadConfirmOn () {
+    const r = confirmOffLib.confirmOnFor(settings, mapping ? mapping.circuits : [])
+    confirmOn = r.marked
+    if (confirmOn.size) log(`Confirm before on: ${[...confirmOn].map(n => n.trim()).join(', ')}`)
+    if (r.unknown.length) log(`Confirm before on: no circuit named ${r.unknown.join(', ')} in this configuration`)
+  }
+
+  // The webapp has asked and the user said yes.
+  function confirmedBy (req) {
+    const q = req && req.query ? req.query.confirm : undefined
+    return q === '1' || q === 'true' || !!(req && req.body && req.body.confirm === true)
+  }
+
+  // An off from something that cannot ask (a Signal K PUT from another app).
+  function refuseUnconfirmedOff (circuit) {
+    if (!confirmOff.has(circuit.name) || settings.confirmOffAllowElsewhere === true) return
+    throw new Error(`"${circuit.name.trim()}" is set to confirm before turning off. Turn it off from the CZone webapp (reload it if it did not ask) or a CZone keypad.`)
+  }
+
+  function refuseUnconfirmedOn (circuit) {
+    if (!confirmOn.has(circuit.name) || settings.confirmOnAllowElsewhere === true) return
+    throw new Error(`"${circuit.name.trim()}" is set to confirm before turning on. Turn it on from the CZone webapp (reload it if it did not ask) or a CZone keypad.`)
+  }
+
+  // An off through the plugin's own REST routes: the webapp asks first, then
+  // says so with ?confirm=1.
+  function needsConfirm (circuit, req, res) {
+    if (!confirmOff.has(circuit.name) || confirmedBy(req)) return false
+    res.status(409).json({ ok: false, needsConfirm: true, circuit: circuit.name, error: `"${circuit.name.trim()}" is set to confirm before turning off.` })
+    return true
+  }
+
+  function needsConfirmOn (circuit, req, res) {
+    if (!confirmOn.has(circuit.name) || confirmedBy(req)) return false
+    res.status(409).json({ ok: false, needsConfirm: true, action: 'on', circuit: circuit.name, error: `"${circuit.name.trim()}" is set to confirm before turning on.` })
+    return true
   }
 
   const registeredPutPaths = new Set()
@@ -449,6 +499,8 @@ module.exports = function (app) {
             return { state: 'COMPLETED', statusCode: 400, message: 'switch.state requires a boolean' }
           }
           try {
+            if (value) refuseUnconfirmedOn(circuitByName(circuit.slug))
+            else refuseUnconfirmedOff(circuitByName(circuit.slug))
             sendCircuitState(circuitByName(circuit.slug), value)
             const state = runtimeState.get(circuit.name)
             if (state) state.lastRequested = value ? 'ON' : 'OFF'
@@ -469,8 +521,10 @@ module.exports = function (app) {
               return { state: 'COMPLETED', statusCode: 400, message: 'switch.brightness requires a number between 0 and 1' }
             }
             try {
-              sendCircuitBrightness(circuitByName(circuit.slug), normalized)
               const state = runtimeState.get(circuit.name)
+              if (normalized <= 0) refuseUnconfirmedOff(circuitByName(circuit.slug))
+              else if (!state || state.state !== 'ON') refuseUnconfirmedOn(circuitByName(circuit.slug))
+              sendCircuitBrightness(circuitByName(circuit.slug), normalized)
               if (state) state.lastRequestedPercent = Math.round(normalized * 100)
               return { state: 'COMPLETED', statusCode: 200 }
             } catch (err) {
@@ -507,6 +561,20 @@ module.exports = function (app) {
       Number(c.page) === Number(page) &&
       Number(c.slot) === Number(slot)
     ) || null
+  }
+
+  function publishSettingsRevision () {
+    if (typeof app.handleMessage !== 'function' && typeof app.emit !== 'function') return
+    const delta = {
+      context: 'vessels.self',
+      updates: [{
+        source: { label: PLUGIN_ID },
+        timestamp: new Date().toISOString(),
+        values: [{ path: 'electrical.czone.settingsRevision', value: Date.now() }]
+      }]
+    }
+    if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
+    else app.emit('delta', delta)
   }
 
   function publishCurrent (circuit, current, pgn, source) {
@@ -1079,6 +1147,54 @@ module.exports = function (app) {
           default: '',
           description: 'Used when Configuration source is set to Saved network configuration. Use the CZone configuration panel to read a new configuration from the network.'
         },
+        confirmOn: {
+          type: 'array',
+          title: 'Confirm before turning on',
+          description: 'Circuits where an accidental ON could be undesirable. The webapp asks "are you sure?" before turning one of these on. CZone keypads, displays and modes are not affected.',
+          default: [],
+          items: {
+            type: 'object',
+            required: ['circuit'],
+            properties: {
+              circuit: (() => {
+                const names = confirmOffLib.confirmOnChoices(settings, mapping ? mapping.circuits : [])
+                return names.length
+                  ? { type: 'string', title: 'Circuit', enum: names.map(n => n.value), enumNames: names.map(n => n.label) }
+                  : { type: 'string', title: 'Circuit (name as in the CZone configuration)' }
+              })()
+            }
+          }
+        },
+        confirmOnAllowElsewhere: {
+          type: 'boolean',
+          title: 'Let other apps turn those circuits on',
+          default: false,
+          description: 'Other Signal K apps switch with a PUT and cannot ask "are you sure?". Unticked, an on from them is refused with a message; the circuit can still be turned on from the webapp or a CZone keypad.'
+        },
+        confirmOff: {
+          type: 'array',
+          title: 'Confirm before turning off',
+          description: 'Circuits that must not go off by a slip of a finger: freezers and fridges, instruments, anything that powers the Signal K server, the network or a display. The webapp asks "are you sure?" before turning one of these off. Turning on is never held up. CZone keypads, displays and modes are not affected.',
+          default: [],
+          items: {
+            type: 'object',
+            required: ['circuit'],
+            properties: {
+              circuit: (() => {
+                const names = confirmOffLib.choices(settings, mapping ? mapping.circuits : [])
+                return names.length
+                  ? { type: 'string', title: 'Circuit', enum: names.map(n => n.value), enumNames: names.map(n => n.label) }
+                  : { type: 'string', title: 'Circuit (name as in the CZone configuration)' }
+              })()
+            }
+          }
+        },
+        confirmOffAllowElsewhere: {
+          type: 'boolean',
+          title: 'Let other apps turn those circuits off',
+          default: false,
+          description: 'Other Signal K apps switch with a PUT and cannot ask "are you sure?". Unticked, an off from them is refused with a message; the circuit can still be turned off from the webapp or a CZone keypad.'
+        }
       }
     }),
 
@@ -1087,6 +1203,11 @@ module.exports = function (app) {
       restartPlugin = restart
       fs.mkdirSync(configDir, { recursive: true })
       loadConfiguredZcf()
+      loadConfirmOff()
+      loadConfirmOn()
+      // Saving plugin settings restarts the plugin. Publish a fresh revision so
+      // every open webapp knows to re-read /circuits (including nominations).
+      publishSettingsRevision()
       registerCircuitPutHandlers()
       registerModePutHandlers()
 
@@ -1218,6 +1339,8 @@ module.exports = function (app) {
           circuits: mapping
             ? mapping.circuits.map(c => ({
                 ...c,
+                confirmOn: confirmOn.has(c.name) ? true : undefined,
+                confirmOff: confirmOff.has(c.name) ? true : undefined,
                 state: runtimeState.get(c.name) || null
               }))
             : []
@@ -1249,7 +1372,9 @@ module.exports = function (app) {
           installedZcf: installedZcfInfo(),
           availableNetworkConfigs: listNetworkConfigs(),
           networkRead: lastNetworkConfig ? { ...lastNetworkConfig, blocks: undefined } : null,
-          nmeaReady
+          nmeaReady,
+          // The circuits offered under "Confirm before turning off".
+          circuitNames: confirmOffLib.choices({}, mapping ? mapping.circuits : []).map(n => n.value)
         })
       })
 
@@ -1356,6 +1481,7 @@ module.exports = function (app) {
       router.post('/circuits/:name/on', (req, res) => {
         try {
           const circuit = circuitByName(req.params.name)
+          if (needsConfirmOn(circuit, req, res)) return
           const deviceId = commandDeviceId()
           const commands = circuit.capabilities.dimmer
             ? czone.dimmerOn(requireProtocolId(circuit), deviceId, 0x08)
@@ -1372,6 +1498,7 @@ module.exports = function (app) {
       router.post('/circuits/:name/off', (req, res) => {
         try {
           const circuit = circuitByName(req.params.name)
+          if (needsConfirm(circuit, req, res)) return
           const deviceId = commandDeviceId()
           const commands = circuit.capabilities.dimmer
             ? czone.dimmerOff(requireProtocolId(circuit), deviceId, 0x08)
@@ -1389,6 +1516,9 @@ module.exports = function (app) {
         try {
           const circuit = circuitByName(req.params.name)
           const percent = Number(req.body && req.body.percent)
+          if (percent <= 0 && needsConfirm(circuit, req, res)) return
+          const currentState = runtimeState.get(circuit.name)
+          if (percent > 0 && (!currentState || currentState.state !== 'ON') && needsConfirmOn(circuit, req, res)) return
           if (circuit.capabilities.dimmer) {
             const commands = []
             const state = runtimeState.get(circuit.name)
