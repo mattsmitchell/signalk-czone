@@ -439,6 +439,11 @@
     pending.delete(key);
   }
   function applySocketValue(path, value, source, timestamp) {
+    if (path === 'electrical.czone.settingsRevision') {
+      console.debug('[CZone WS] settings changed; refreshing circuit nominations', value);
+      refreshOnce('settings-change');
+      return false;
+    }
     if (path === 'name') {
       const nextName = typeof value === 'string' ? value.trim() : '';
       if (nextName && nextName !== vesselName) { vesselName = nextName; renderHero(); return true; }
@@ -720,7 +725,7 @@
 
   function sendSubscriptions() {
     if (!socket || socket.readyState !== WebSocket.OPEN || !circuits.length) return;
-    const subscribe = [{ path: 'name', policy: 'instant' }, { path: 'electrical.czone.mode.active', policy: 'instant' }];
+    const subscribe = [{ path: 'name', policy: 'instant' }, { path: 'electrical.czone.mode.active', policy: 'instant' }, { path: 'electrical.czone.settingsRevision', policy: 'instant' }];
     for (const c of circuits) {
       subscribe.push({ path: `electrical.czone.${c.slug}.switch.state`, policy: 'instant' });
       subscribe.push({ path: `electrical.czone.${c.slug}.current`, policy: 'instant' });
