@@ -7,6 +7,7 @@ const czone = require('./lib/czone')
 const nmea = require('./lib/nmea2000')
 const monitoring = require('./lib/monitoring')
 const signalk = require('./lib/signalk')
+const confirmSwitchLib = require('./lib/confirm-switch')
 
 const MAX_UPLOAD_BYTES = 1024 * 1024
 const CZONE_CONFIG_BLOCK_HEADER = 23
@@ -118,6 +119,8 @@ module.exports = function (app) {
   let configTransferTimer = null
   let configFastPacket = null
   let lastNetworkConfig = null
+  let confirmOn = new Set()
+  let confirmOff = new Set()
 
   const configRoot = app.config && app.config.configPath
     ? path.join(app.config.configPath, 'plugin-config-data')
@@ -205,6 +208,38 @@ module.exports = function (app) {
       throw new Error(`Circuit "${circuit.name}" is not yet marked controllable`)
     }
     return circuit.protocolCircuitId
+  }
+
+  function loadConfirmSwitching () {
+    const on = confirmSwitchLib.confirmFor(settings, mapping ? mapping.circuits : [], 'confirmOn')
+    const off = confirmSwitchLib.confirmFor(settings, mapping ? mapping.circuits : [], 'confirmOff')
+    confirmOn = on.marked
+    confirmOff = off.marked
+    if (confirmOn.size) log(`Confirm before on: ${[...confirmOn].map(n => n.trim()).join(', ')}`)
+    if (confirmOff.size) log(`Confirm before off: ${[...confirmOff].map(n => n.trim()).join(', ')}`)
+    const unknown = [...new Set([...on.unknown, ...off.unknown])]
+    if (unknown.length) log(`Confirm switching: no circuit named ${unknown.join(', ')} in this configuration`)
+  }
+
+  function confirmedBy (req) {
+    const q = req && req.query ? req.query.confirm : undefined
+    return q === '1' || q === 'true' || !!(req && req.body && req.body.confirm === true)
+  }
+
+  function refuseUnconfirmedSwitch (circuit, on) {
+    const marked = on ? confirmOn : confirmOff
+    const allowElsewhere = on ? settings.confirmOnAllowElsewhere === true : settings.confirmOffAllowElsewhere === true
+    if (!marked.has(circuit.name) || allowElsewhere) return
+    const action = on ? 'turning on' : 'turning off'
+    throw new Error(`"${circuit.name.trim()}" is set to confirm before ${action}. Use the CZone webapp to confirm the change, or a CZone keypad.`)
+  }
+
+  function needsConfirm (circuit, on, req, res) {
+    const marked = on ? confirmOn : confirmOff
+    if (!marked.has(circuit.name) || confirmedBy(req)) return false
+    const action = on ? 'turning on' : 'turning off'
+    res.status(409).json({ ok: false, needsConfirm: true, action: on ? 'on' : 'off', circuit: circuit.name, error: `"${circuit.name.trim()}" is set to confirm before ${action}.` })
+    return true
   }
 
   const registeredPutPaths = new Set()
@@ -449,6 +484,7 @@ module.exports = function (app) {
             return { state: 'COMPLETED', statusCode: 400, message: 'switch.state requires a boolean' }
           }
           try {
+            refuseUnconfirmedSwitch(circuitByName(circuit.slug), value)
             sendCircuitState(circuitByName(circuit.slug), value)
             const state = runtimeState.get(circuit.name)
             if (state) state.lastRequested = value ? 'ON' : 'OFF'
@@ -469,6 +505,7 @@ module.exports = function (app) {
               return { state: 'COMPLETED', statusCode: 400, message: 'switch.brightness requires a number between 0 and 1' }
             }
             try {
+              if (normalized <= 0) refuseUnconfirmedSwitch(circuitByName(circuit.slug), false)
               sendCircuitBrightness(circuitByName(circuit.slug), normalized)
               const state = runtimeState.get(circuit.name)
               if (state) state.lastRequestedPercent = Math.round(normalized * 100)
@@ -1079,6 +1116,20 @@ module.exports = function (app) {
           default: '',
           description: 'Used when Configuration source is set to Saved network configuration. Use the CZone configuration panel to read a new configuration from the network.'
         },
+        confirmOn: confirmSwitchLib.schema(settings, mapping ? mapping.circuits : [], 'confirmOn', 'Confirm before turning on'),
+        confirmOff: confirmSwitchLib.schema(settings, mapping ? mapping.circuits : [], 'confirmOff', 'Confirm before turning off'),
+        confirmOnAllowElsewhere: {
+          type: 'boolean',
+          title: 'Let other apps turn confirm-ON circuits on',
+          default: false,
+          description: 'Signal K PUT clients cannot show the confirmation dialog. Unticked, ON requests for nominated circuits are refused.'
+        },
+        confirmOffAllowElsewhere: {
+          type: 'boolean',
+          title: 'Let other apps turn confirm-OFF circuits off',
+          default: false,
+          description: 'Signal K PUT clients cannot show the confirmation dialog. Unticked, OFF requests for nominated circuits are refused.'
+        },
       }
     }),
 
@@ -1087,6 +1138,7 @@ module.exports = function (app) {
       restartPlugin = restart
       fs.mkdirSync(configDir, { recursive: true })
       loadConfiguredZcf()
+      loadConfirmSwitching()
       registerCircuitPutHandlers()
       registerModePutHandlers()
 
@@ -1218,6 +1270,8 @@ module.exports = function (app) {
           circuits: mapping
             ? mapping.circuits.map(c => ({
                 ...c,
+                confirmOn: confirmOn.has(c.name) ? true : undefined,
+                confirmOff: confirmOff.has(c.name) ? true : undefined,
                 state: runtimeState.get(c.name) || null
               }))
             : []
@@ -1249,7 +1303,8 @@ module.exports = function (app) {
           installedZcf: installedZcfInfo(),
           availableNetworkConfigs: listNetworkConfigs(),
           networkRead: lastNetworkConfig ? { ...lastNetworkConfig, blocks: undefined } : null,
-          nmeaReady
+          nmeaReady,
+          circuitNames: confirmSwitchLib.choices({}, mapping ? mapping.circuits : []).map(n => n.value)
         })
       })
 
@@ -1356,6 +1411,7 @@ module.exports = function (app) {
       router.post('/circuits/:name/on', (req, res) => {
         try {
           const circuit = circuitByName(req.params.name)
+          if (needsConfirm(circuit, true, req, res)) return
           const deviceId = commandDeviceId()
           const commands = circuit.capabilities.dimmer
             ? czone.dimmerOn(requireProtocolId(circuit), deviceId, 0x08)
@@ -1372,6 +1428,7 @@ module.exports = function (app) {
       router.post('/circuits/:name/off', (req, res) => {
         try {
           const circuit = circuitByName(req.params.name)
+          if (needsConfirm(circuit, false, req, res)) return
           const deviceId = commandDeviceId()
           const commands = circuit.capabilities.dimmer
             ? czone.dimmerOff(requireProtocolId(circuit), deviceId, 0x08)
@@ -1389,6 +1446,7 @@ module.exports = function (app) {
         try {
           const circuit = circuitByName(req.params.name)
           const percent = Number(req.body && req.body.percent)
+          if (percent <= 0 && needsConfirm(circuit, false, req, res)) return
           if (circuit.capabilities.dimmer) {
             const commands = []
             const state = runtimeState.get(circuit.name)
