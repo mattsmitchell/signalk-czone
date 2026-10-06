@@ -510,7 +510,6 @@ module.exports = function (app) {
               if (normalized <= 0) refuseUnconfirmedSwitch(target, false)
               else if (!state || state.state !== 'ON') refuseUnconfirmedSwitch(target, true)
               sendCircuitBrightness(target, normalized)
-              const state = runtimeState.get(circuit.name)
               if (state) state.lastRequestedPercent = Math.round(normalized * 100)
               return { state: 'COMPLETED', statusCode: 200 }
             } catch (err) {
