@@ -81,6 +81,26 @@ Only the installed path is stored in plugin configuration; the binary file is no
 
 Signal K plugin routes registered directly with `registerWithRouter()` are admin-only by default, which is appropriate for changing the vessel's CZone configuration.
 
+## Confirm before turning off
+
+Some circuits must not go off by a slip of a finger: a freezer, the instruments, or the circuit that powers the Signal K server, the network or the display in use. The ZCF does not say which circuits those are, so they are nominated in the plugin configuration panel under **Confirm before turning off**.
+
+A nominated circuit:
+
+- turns **on** from anywhere, never held up;
+- shows a padlock after its name in the webapp, which asks "Turn off …?" with **Keep on** and **Turn off** before sending anything;
+- is not turned off by a Signal K PUT, because a PUT carries only the value and cannot say that the user was asked. The PUT is answered with status 400 and a message, and nothing is sent to CZone. Tick **Let other apps turn these circuits off** to allow it.
+
+CZone keypads and displays are not affected, and neither are modes: a mode switches what the CZone configuration says it switches.
+
+After the user answers **Turn off**, the webapp uses the plugin's own route, which sends the same commands as any other off:
+
+`POST /plugins/signalk-czone/circuits/<slug>/off?confirm=1`
+
+Without `confirm=1` (or `{"confirm": true}` in the body) that route answers `409` with `{"needsConfirm": true}` for a nominated circuit. `POST …/level` with `percent` 0 is treated the same way.
+
+Settings: `confirmOff` is a list of `{ "circuit": "<name>" }`, matched by circuit name or slug without regard to case; `confirmOffAllowElsewhere` is a boolean, default `false`.
+
 ## AC 130817
 
 Observed CZone format:
