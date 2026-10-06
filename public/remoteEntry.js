@@ -72,6 +72,55 @@ var signalk_czone = (function () {
       persist({ allowCzoneWrite: value })
     }
 
+    function confirmList (settingName) {
+      return (Array.isArray(configuration[settingName]) ? configuration[settingName] : [])
+        .map(function (e) { return typeof e === 'string' ? { circuit: e } : e })
+        .filter(function (e) { return e && e.circuit })
+        .map(function (e) { return { circuit: e.circuit } })
+    }
+
+    function addConfirm (settingName, name) {
+      if (!name) return
+      var next = {}
+      next[settingName] = confirmList(settingName).concat([{ circuit: name }])
+      persist(next)
+    }
+
+    function removeConfirm (settingName, index) {
+      var next = {}
+      next[settingName] = confirmList(settingName).filter(function (_e, i) { return i !== index })
+      persist(next)
+    }
+
+    function confirmBox (settingName, title, description, allowName, allowLabel) {
+      var list = confirmList(settingName)
+      var names = data && Array.isArray(data.circuitNames) ? data.circuitNames : []
+      return React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, title),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, description),
+        list.map(function (e, i) {
+          var known = !names.length || names.some(function (n) { return n.trim().toLowerCase() === String(e.circuit).trim().toLowerCase() })
+          return React.createElement('div', { key: settingName + ':' + e.circuit + ':' + i, style: { marginTop: 8 } },
+            React.createElement('span', { style: { display: 'inline-block', minWidth: 170, marginRight: 8, fontWeight: 600 } }, e.circuit + (known ? '' : ' (not in this configuration)')),
+            React.createElement('button', { type: 'button', disabled: busy, onClick: function () { removeConfirm(settingName, i) } }, 'Remove')
+          )
+        }),
+        React.createElement('label', { style: { display: 'block', marginTop: 10 } }, 'Add a circuit ',
+          React.createElement('select', { value: '', disabled: busy || !names.length, onChange: function (e) { addConfirm(settingName, e.target.value) } },
+            [React.createElement('option', { key: '', value: '' }, names.length ? 'Choose a circuit' : 'Load a CZone configuration first')].concat(
+              names.filter(function (n) { return !list.some(function (e) { return String(e.circuit).trim().toLowerCase() === n.trim().toLowerCase() }) })
+                .map(function (n) { return React.createElement('option', { key: n, value: n }, n) })
+            )
+          )
+        ),
+        React.createElement('label', { style: { display: 'block', marginTop: 12 } },
+          React.createElement('input', { type: 'checkbox', checked: configuration[allowName] === true, disabled: busy || !list.length, onChange: function (e) { var next = {}; next[allowName] = e.target.checked; persist(next) } }),
+          ' ' + allowLabel
+        ),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Other Signal K apps use PUT and cannot show this confirmation. Unticked, matching requests from them are refused. CZone keypads, displays and modes are not affected.')
+      )
+    }
+
     function chooseSource (value) {
       setLocalSource(value)
       if (value === 'installedZcf') {
@@ -222,6 +271,9 @@ var signalk_czone = (function () {
         reading ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Receiving configuration · ' + (read.receivedBytes || 0) + ' bytes' + (read.blockCount != null ? ' · ' + read.blockCount + ' blocks' : '') + (read.lastPacketAt ? ' · last block ' + new Date(read.lastPacketAt).toLocaleTimeString() : '')) : null,
         read && read.status === 'complete' ? React.createElement('div', { style: { marginTop: 8, fontSize: 12 } }, 'Saved: ' + (read.file || 'CZone network configuration')) : null
       ),
+
+      confirmBox('confirmOn', 'Confirm before turning on', 'Choose circuits where an accidental ON could be undesirable. The CZone webapp asks before sending the ON command.', 'confirmOnAllowElsewhere', 'Let other apps turn these circuits on'),
+      confirmBox('confirmOff', 'Confirm before turning off', 'Choose circuits that must not go off by a slip of a finger, such as refrigeration, instruments, network or server power.', 'confirmOffAllowElsewhere', 'Let other apps turn these circuits off'),
 
       current ? React.createElement('div', { style: { fontSize: 12 } }, 'Currently loaded: ' + (current.vesselName || current.fileName) + ' · ' + current.circuits + ' circuits · ' + current.modes + ' modes') : null,
       error ? React.createElement('div', { role: 'alert', style: { marginTop: 9 } }, 'Error: ' + error) : null
