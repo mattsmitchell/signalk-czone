@@ -247,7 +247,7 @@ module.exports = function (app) {
   // says so with ?confirm=1.
   function needsConfirm (circuit, req, res) {
     if (!confirmOff.has(circuit.name) || confirmedBy(req)) return false
-    res.status(409).json({ ok: false, needsConfirm: true, action: 'off', circuit: circuit.name, error: `"${circuit.name.trim()}" is set to confirm before turning off.` })
+    res.status(409).json({ ok: false, needsConfirm: true, circuit: circuit.name, error: `"${circuit.name.trim()}" is set to confirm before turning off.` })
     return true
   }
 
