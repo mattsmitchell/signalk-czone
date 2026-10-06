@@ -131,6 +131,30 @@
     .connection i { width:8px; height:8px; border-radius:50%; background:#ffb84d; }
     .connection.ok i { background:var(--green); box-shadow:0 0 10px rgba(49,213,138,.6); }
     .mobile-menu { display:none; }
+    /* Trends: the arrow at the end of a row is a button that opens the circuit's current over time. */
+    button.arrow { line-height:1; border:0; background:transparent; cursor:pointer; padding:6px 4px; border-radius:8px; }
+    .arrow:hover, .arrow:focus-visible { color:#cfe6ff; background:rgba(55,143,215,.12); }
+    .trend-panel { display:none; margin:12px 0; }
+    .trend-panel.show { display:block; }
+    .trend-panel .section-head .trend-close { margin-left:auto; cursor:pointer; }
+    .trend-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 15px 0; }
+    .trend-seg { display:inline-flex; max-width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:11px; background:#0c2135; }
+    .trend-seg button { border:0; background:transparent; color:#c6d6e7; padding:8px 13px; cursor:pointer; font-size:12px; white-space:nowrap; }
+    .trend-seg button + button { border-left:1px solid var(--line); }
+    .trend-seg button:hover { background:rgba(55,143,215,.12); }
+    .trend-seg button.active { background:linear-gradient(135deg,#168eea,#2164b8); color:#fff; }
+    .trend-custom { display:none; flex-wrap:wrap; gap:10px; align-items:center; padding:10px 15px 0; font-size:12px; color:#a9bfd2; }
+    .trend-custom.show { display:flex; }
+    .trend-custom label { display:inline-flex; align-items:center; gap:6px; }
+    .trend-custom input { background:#0c2135; color:var(--text); border:1px solid var(--line); border-radius:9px; padding:7px 9px; color-scheme:dark; }
+    .trend-custom button { background:#0c2135; border:1px solid var(--line); color:#cbdbea; border-radius:9px; padding:7px 13px; cursor:pointer; }
+    .trend-stats { display:flex; flex-wrap:wrap; gap:0 28px; padding:8px 17px 0; }
+    .trend-chart { position:relative; padding:12px 12px 14px; }
+    .trend-chart canvas { width:100%; height:300px; display:block; }
+    .trend-tip { position:absolute; pointer-events:none; display:none; background:#0f2237; border:1px solid var(--line); border-radius:9px; padding:6px 9px; font-size:11px; color:var(--text); white-space:nowrap; box-shadow:0 8px 20px rgba(0,0,0,.35); }
+    .trend-tip small { display:block; color:var(--muted); }
+    .trend-msg { position:absolute; top:0; right:0; bottom:0; left:0; display:none; align-items:center; justify-content:center; color:var(--muted); font-size:13px; text-align:center; padding:30px; }
+    .trend-msg.show { display:flex; }
     /* Responsive layout: keep every panel visible as the viewport narrows.
        Wide: three columns. Medium: the former right well moves beneath the left well.
        Narrow: navigation/status stack above the circuit list. */
@@ -169,7 +193,9 @@
       .section-head { flex-wrap:wrap; }
       .section-head .search { margin-left:auto; flex:1 1 180px; min-width:180px; max-width:none; }
       .section-head .sort { margin-left:auto; }
-      .circuit { grid-template-columns:30px minmax(0,1fr) auto; }
+      .circuit { grid-template-columns:30px minmax(0,1fr) auto 30px; }
+      .trend-chart canvas { height:230px; }
+      .trend-seg button { padding:8px 9px; }
       .tags { display:none; }
       .status { display:none; }
       .control { grid-column:2 / 4; justify-content:stretch; }
@@ -209,6 +235,13 @@
       <section class="hero">
         <h1 id="heroTitle">Your Boat, Your Circuits</h1>
         <p>Monitor and control your boat's electrical systems.</p><div id="writeGate" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid rgba(255,195,77,.35);border-radius:10px;background:rgba(255,195,77,.08);color:#ffd98a;font-size:12px;line-height:1.5"></div>
+      </section>
+      <section class="section trend-panel" id="trendPanel">
+        <div class="section-head"><span>📈</span><div><h2 id="trendTitle"></h2><span class="subtle" id="trendSub"></span></div><button type="button" class="sort trend-close" onclick="closeTrend()" aria-label="Close trend">✕ Close</button></div>
+        <div class="trend-controls"><div class="trend-seg" id="trendRanges"></div></div>
+        <div class="trend-custom" id="trendCustom"><label>From <input type="datetime-local" id="trendFrom"></label><label>To <input type="datetime-local" id="trendTo"></label><button type="button" onclick="applyTrendCustom()">Apply</button><span id="trendCustomMsg"></span></div>
+        <div class="trend-stats" id="trendStats"></div>
+        <div class="trend-chart"><canvas id="trendCanvas"></canvas><div class="trend-tip" id="trendTip"></div><div class="trend-msg" id="trendMsg"></div></div>
       </section>
       <section class="section">
         <div class="section-head"><span id="sectionIcon">⚡</span><div><h2 id="sectionTitle">All Circuits</h2><span class="subtle" id="sectionCount"></span></div><label class="search"><span>⌕</span><input id="search" type="search" placeholder="Search circuits…" autocomplete="off"></label><select class="sort" id="sort"><option value="name">A–Z</option><option value="state">In Use</option><option value="brightness">Brightness</option></select></div>
@@ -337,7 +370,7 @@
     const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" data-circuit-slug="${esc(c.slug)}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && current ? current : (on?'ON':'OFF'))}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
     const sending = p ? `<span class="sending">Sending…</span>` : '';
-    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><span class="arrow">›</span></div>`;
+    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div><button type="button" class="arrow" title="Current trend" aria-label="Current trend for ${esc(c.name)}" onclick="openTrend('${encodeURIComponent(c.slug)}')">›</button></div>`;
   }
 
   function previewPercent(el) { const out=el.parentElement.querySelector('.percent'); out.textContent=el.value+'%'; }
@@ -579,6 +612,232 @@
     putSignalK(signalKPath(c, 'brightness'), requested / 100, c, 'brightness', requested, previous);
   };
   window.toggleFavorite = key => { favorites.has(key) ? favorites.delete(key) : favorites.add(key); saveFavorites(); render(); };
+
+  // ---- Trends ---------------------------------------------------------------
+  // The arrow at the end of a row opens that circuit's current over time, at
+  // the top of the page. GET /trend answers with rows of [t, value] (full
+  // detail) or [t, average, min, max] (ten-minute summaries, for ranges over
+  // 48 h); the chart draws the average as the line and min-max as a band.
+  const TREND_RANGES = [['1h','1 h'], ['24h','24 h'], ['7d','7 d'], ['31d','31 d'], ['90d','90 d'], ['1y','1 y']];
+  const TREND_RANGE_MS = { '1h':3600e3, '24h':86400e3, '7d':7*86400e3, '31d':31*86400e3, '90d':90*86400e3, '1y':365*86400e3 };
+  const TREND_RGB = '56,169,255';
+  const trend = { open:false, circuit:null, range:'24h', custom:null, customOpen:false, start:0, end:0, data:[], gapMs:0, latest:null, hover:null, geom:null, timer:null, seq:0 };
+  const trendEl = id => document.querySelector('#' + id);
+  const trendPath = c => `electrical.czone.${c.slug}.current`;
+  // datetime-local wants local time as YYYY-MM-DDTHH:MM.
+  const toLocalInput = ms => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60e3); return d.toISOString().slice(0, 16); };
+
+  window.openTrend = slug => {
+    const c = circuitBySlug(decodeURIComponent(slug)); if (!c) return;
+    trend.open = true; trend.circuit = c; trend.data = []; trend.hover = null;
+    trendEl('trendTitle').textContent = c.name.trim();
+    trendEl('trendSub').textContent = `Current · ${trendPath(c)}`;
+    trendEl('trendPanel').classList.add('show');
+    loadTrend();
+    trendEl('trendPanel').scrollIntoView({ behavior:'smooth', block:'start' });
+  };
+  window.closeTrend = () => { trend.open = false; clearInterval(trend.timer); trendEl('trendPanel').classList.remove('show'); };
+  window.setTrendRange = key => {
+    if (key === 'custom') { trend.customOpen = true; trendControls(); return; } // nothing reloads until Apply
+    trend.customOpen = false; trend.custom = null; trend.range = key; trend.data = [];
+    loadTrend();
+  };
+  window.applyTrendCustom = () => {
+    const from = new Date(trendEl('trendFrom').value).getTime(), to = new Date(trendEl('trendTo').value).getTime();
+    const msg = trendEl('trendCustomMsg');
+    if (!Number.isFinite(from) || !Number.isFinite(to)) { msg.textContent = 'Enter a start and an end.'; return; }
+    if (to <= from) { msg.textContent = 'The start must be before the end.'; return; }
+    msg.textContent = '';
+    trend.range = 'custom'; trend.custom = { from, to }; trend.data = [];
+    loadTrend();
+  };
+
+  function trendControls() {
+    const customOn = trend.customOpen || trend.range === 'custom';
+    trendEl('trendRanges').innerHTML = TREND_RANGES.map(([k, label]) => `<button type="button" class="${!customOn && k === trend.range ? 'active' : ''}" onclick="setTrendRange('${k}')">${label}</button>`).join('') +
+      `<button type="button" class="${customOn ? 'active' : ''}" onclick="setTrendRange('custom')">Custom</button>`;
+    trendEl('trendCustom').classList.toggle('show', customOn);
+  }
+  function trendMsg(text) { const m = trendEl('trendMsg'); m.textContent = text; m.classList.toggle('show', !!text); }
+
+  async function loadTrend() {
+    if (!trend.open || !trend.circuit) return;
+    trendControls();
+    const seq = ++trend.seq;
+    if (!trend.data.length) { trendMsg('Loading…'); trendStats(); drawTrend(); }
+    const custom = trend.range === 'custom' && trend.custom;
+    const query = custom ? `from=${trend.custom.from}&to=${trend.custom.to}` : `range=${trend.range}`;
+    let res;
+    try {
+      const r = await fetch(`${API}/trend?path=${encodeURIComponent(trendPath(trend.circuit))}&${query}`, { cache:'no-store', credentials:'include' });
+      res = await r.json();
+    } catch (e) { res = { available:false, detail:e.message }; }
+    if (seq !== trend.seq || !trend.open) return;
+    // Kept as [t, value, min, max]; min and max are null for full detail.
+    trend.data = (Array.isArray(res.data) ? res.data : []).map(p => [p[0], p[1], p.length > 2 ? p[2] : null, p.length > 3 ? p[3] : null]);
+    trend.gapMs = Number(res.gapMs) || 16 * 60e3;
+    trend.latest = res.latest && Number.isFinite(res.latest.value) ? res.latest.value : null;
+    const now = Date.now();
+    trend.end = Number(res.end) || (custom ? trend.custom.to : now);
+    trend.start = Number(res.start) || (custom ? trend.custom.from : now - (TREND_RANGE_MS[trend.range] || TREND_RANGE_MS['24h']));
+    if (!trend.customOpen || trend.range !== 'custom') { trendEl('trendFrom').value = toLocalInput(trend.start); trendEl('trendTo').value = toLocalInput(trend.end); }
+    trend.hover = null;
+    trendEl('trendTip').style.display = 'none';
+    if (res.available === false || res.error) trendMsg(res.detail || 'Trends are not available.');
+    else if (!trend.data.length) trendMsg(custom ? 'Nothing was recorded in this period.' : 'No samples in this range yet.');
+    else trendMsg('');
+    trendControls(); trendStats(); drawTrend();
+    clearInterval(trend.timer);
+    if (trend.range === '1h' || trend.range === '24h') trend.timer = setInterval(() => { if (trend.open) loadTrend(); }, 60000);
+  }
+
+  const trendLow = p => p[2] === null ? p[1] : p[2];
+  const trendHigh = p => p[3] === null ? p[1] : p[3];
+
+  function trendStats() {
+    const d = trend.data, el = trendEl('trendStats');
+    if (!d.length) { el.innerHTML = ''; return; }
+    // Samples are stored on change, so they are not evenly spaced: the average
+    // is taken over time (and not across gaps), not over the number of rows.
+    let area = 0, span = 0;
+    for (let i = 1; i < d.length; i++) {
+      const dt = d[i][0] - d[i - 1][0];
+      if (dt > trend.gapMs) continue;
+      area += dt * (d[i][1] + d[i - 1][1]) / 2; span += dt;
+    }
+    const avg = span ? area / span : d.reduce((sum, p) => sum + p[1], 0) / d.length;
+    const tile = (icon, label, v) => `<div class="stat"><div class="stat-icon">${icon}</div><div><strong>${v.toFixed(1)} A</strong><span>${label}</span></div></div>`;
+    // "Now" is the live value. The last row of a long range is an average, and
+    // a past period or a circuit that is not reporting has no "now".
+    const first = trend.latest !== null && trend.range !== 'custom' ? tile('●', 'Now', trend.latest) : tile('●', 'Last', d[d.length - 1][1]);
+    el.innerHTML = first + tile('↓', 'Minimum', Math.min(...d.map(trendLow))) + tile('≈', 'Average', avg) + tile('↑', 'Maximum', Math.max(...d.map(trendHigh)));
+  }
+
+  function trendTicks(min, max, count) {
+    if (min === max) { const pad = Math.abs(min) * 0.05 || 1; min -= pad; max += pad; }
+    const raw = (max - min) / count;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || raw;
+    const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step, ticks = [];
+    for (let v = lo; v <= hi + step / 2; v += step) ticks.push(Math.round(v / step) * step);
+    return { lo, hi, ticks, step };
+  }
+  function trendTimeLabel(t, span) {
+    const d = new Date(t), hm = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    if (span <= 36 * 3600e3) return hm;
+    if (span <= 10 * 86400e3) return d.toLocaleDateString([], { weekday:'short' }) + ' ' + hm;
+    if (span <= 200 * 86400e3) return d.toLocaleDateString([], { day:'numeric', month:'short' });
+    return d.toLocaleDateString([], { month:'short', year:'2-digit' });
+  }
+
+  function drawTrend() {
+    const canvas = trendEl('trendCanvas');
+    trend.geom = null;
+    const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const d = trend.data;
+    if (!d.length || !W) return;
+    ctx.font = '11px Inter, system-ui, sans-serif';
+
+    // Current is shown from zero, and the scale covers the min-max band.
+    const y = trendTicks(Math.min(0, ...d.map(trendLow)), Math.max(...d.map(trendHigh)), 5);
+    let dp = Math.max(0, -Math.floor(Math.log10(y.step) + 1e-9));
+    if (y.ticks.some(t => Math.abs(t * Math.pow(10, dp) - Math.round(t * Math.pow(10, dp))) > 1e-6)) dp++;
+    const pad = { l: Math.max(...y.ticks.map(t => ctx.measureText(t.toFixed(dp)).width), ctx.measureText('A').width) + 14, r:12, t:12, b:26 };
+    const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b, t0 = trend.start, t1 = trend.end, base = pad.t + ph;
+    const X = t => pad.l + ((t - t0) / (t1 - t0)) * pw;
+    const Y = v => pad.t + (1 - (v - y.lo) / (y.hi - y.lo)) * ph;
+
+    // Grid and labels, kept quiet.
+    ctx.strokeStyle = 'rgba(148,193,235,.10)'; ctx.lineWidth = 1; ctx.fillStyle = '#8fa7be';
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+    for (const t of y.ticks) {
+      const yy = Math.round(Y(t)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke();
+      ctx.fillText(t.toFixed(dp), pad.l - 8, yy);
+    }
+    ctx.textBaseline = 'top';
+    const n = Math.max(2, Math.min(7, Math.floor(pw / 110)));
+    for (let i = 0; i <= n; i++) {
+      const t = t0 + (i / n) * (t1 - t0);
+      ctx.textAlign = i === 0 ? 'left' : i === n ? 'right' : 'center';
+      ctx.fillText(trendTimeLabel(t, t1 - t0), X(t), H - pad.b + 8);
+    }
+
+    // The line breaks where samples are missing (plugin stopped, card out,
+    // module off the bus).
+    const segments = [];
+    let seg = [d[0]];
+    for (let i = 1; i < d.length; i++) {
+      if (d[i][0] - d[i - 1][0] > trend.gapMs) { segments.push(seg); seg = []; }
+      seg.push(d[i]);
+    }
+    segments.push(seg);
+    const color = `rgb(${TREND_RGB})`;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(pad.l, 0, pw, H); ctx.clip();
+    for (const g of segments) {
+      if (g.length === 1) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(g[0][0]), Y(g[0][1]), 2.5, 0, Math.PI * 2); ctx.fill(); continue; }
+      ctx.beginPath();
+      if (g.some(p => p[2] !== null && p[3] !== p[2])) {
+        // Summarised data: the min-max band behind the average.
+        g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(trendHigh(p))) : ctx.moveTo(X(p[0]), Y(trendHigh(p))));
+        for (let i = g.length - 1; i >= 0; i--) ctx.lineTo(X(g[i][0]), Y(trendLow(g[i])));
+        ctx.fillStyle = `rgba(${TREND_RGB},.20)`;
+      } else {
+        g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+        ctx.lineTo(X(g[g.length - 1][0]), base); ctx.lineTo(X(g[0][0]), base);
+        const grad = ctx.createLinearGradient(0, pad.t, 0, base);
+        grad.addColorStop(0, `rgba(${TREND_RGB},.22)`); grad.addColorStop(1, `rgba(${TREND_RGB},0)`);
+        ctx.fillStyle = grad;
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+    }
+    ctx.restore();
+
+    trend.geom = { X, Y, pad, pw, W, t0, t1 };
+    if (trend.hover) {
+      const p = trend.hover, x = Math.round(X(p[0])) + 0.5;
+      ctx.strokeStyle = 'rgba(237,246,255,.35)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, base); ctx.stroke();
+      ctx.fillStyle = color; ctx.strokeStyle = '#0b1a2b'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+  }
+
+  // The crosshair snaps to the nearest sample.
+  function trendHover(px) {
+    const tip = trendEl('trendTip'), g = trend.geom, d = trend.data;
+    if (!g || !d.length) { tip.style.display = 'none'; return; }
+    const t = g.t0 + ((px - g.pad.l) / g.pw) * (g.t1 - g.t0);
+    let lo = 0, hi = d.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (d[mid][0] < t) lo = mid; else hi = mid; }
+    const p = Math.abs(d[lo][0] - t) <= Math.abs(d[hi][0] - t) ? d[lo] : d[hi];
+    trend.hover = p;
+    drawTrend();
+    const when = new Date(p[0]).toLocaleString([], Object.assign({ weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }, g.t1 - g.t0 > 300 * 86400e3 ? { year:'numeric' } : {}));
+    const spread = p[2] !== null && p[3] !== p[2] ? `<small>min ${p[2].toFixed(1)} · max ${p[3].toFixed(1)}</small>` : '';
+    tip.innerHTML = `<b>${p[1].toFixed(1)} A</b>${spread}<small>${esc(when)}</small>`;
+    tip.style.display = 'block';
+    const x = trend.geom.X(p[0]), tw = tip.offsetWidth;
+    tip.style.left = `${Math.max(8, x + 14 + tw > g.W - 8 ? x - 14 - tw : x + 14) + 12}px`;
+    tip.style.top = `${Math.max(12, trend.geom.Y(p[1]) - 20)}px`;
+  }
+  function trendHoverEnd() { trend.hover = null; drawTrend(); trendEl('trendTip').style.display = 'none'; }
+  trendEl('trendCanvas').addEventListener('mousemove', e => trendHover(e.offsetX));
+  trendEl('trendCanvas').addEventListener('mouseleave', trendHoverEnd);
+  trendEl('trendCanvas').addEventListener('touchmove', e => { const r = e.currentTarget.getBoundingClientRect(); trendHover(e.touches[0].clientX - r.left); }, { passive:true });
+  trendEl('trendCustom').addEventListener('keydown', e => { if (e.key === 'Enter') window.applyTrendCustom(); });
+  // Escape closes the trend, unless a dialog is open on top of it. Listening in
+  // the capture phase sees the dialog before the dialog's own handler removes it.
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && trend.open && !document.querySelector('[role="alertdialog"]')) window.closeTrend(); }, true);
+  window.addEventListener('resize', () => { if (trend.open) drawTrend(); });
 
   function renderModes() {
     const el = document.querySelector('#modes');

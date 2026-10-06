@@ -6,6 +6,7 @@ const zcf = require('./lib/zcf')
 const czone = require('./lib/czone')
 const nmea = require('./lib/nmea2000')
 const monitoring = require('./lib/monitoring')
+const { createTrends } = require('./lib/trends')
 const signalk = require('./lib/signalk')
 
 const MAX_UPLOAD_BYTES = 1024 * 1024
@@ -103,6 +104,8 @@ module.exports = function (app) {
   let lastNmeaOutput = null
   let runtimeState = new Map()
   let monitoringRuntime = null
+  // Trend recording of circuit current (see lib/trends).
+  let trends = null
   // Server-side change cache for circuit state/brightness notifications.
   // CZone telemetry repeats values frequently; those UI-facing paths are
   // published only when their observed value changes. Current telemetry is
@@ -524,6 +527,8 @@ module.exports = function (app) {
     const delta = signalk.circuitDelta(pathName, current, circuit, sourceInfo)
     if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
     else if (typeof app.emit === 'function') app.emit('delta', delta)
+    // The trend keeps the latest value and stores it on its own beat.
+    if (trends) trends.observe(pathName, current)
   }
   function decodeCurrentPacket (packet) {
     if (!packet) return
@@ -1063,6 +1068,26 @@ module.exports = function (app) {
           default: false,
           description: 'Allows this plugin to send commands to CZone devices. This can change circuit states, modes, and configuration. Enable only if you understand the risks.'
         },
+        trendsEnabled: {
+          type: 'boolean',
+          title: 'Record circuit current trends',
+          default: true,
+          description: 'Stores each circuit\'s current every 10 seconds as plain CSV files, for the trend charts in the webapp. On a Victron GX trends go to an SD card or USB stick only, never to internal flash; without a writable card nothing is recorded.'
+        },
+        trendDirectory: {
+          type: 'string',
+          title: 'Trend folder (optional)',
+          default: '',
+          description: 'Blank = automatic: a card or stick on a Victron GX, the plugin data folder elsewhere.'
+        },
+        trendRetentionDays: {
+          type: 'number',
+          title: 'Keep full-detail trend data for',
+          enum: [0, 31, 90, 365],
+          enumNames: ['Until the storage is nearly full', '31 days', '90 days', '1 year'],
+          default: 0,
+          description: 'Ten-minute summaries are kept regardless. When storage runs low the oldest full-detail days are removed first, so recording never stops.'
+        },
         configurationSource: {
           type: 'string',
           title: 'Configuration source',
@@ -1089,6 +1114,14 @@ module.exports = function (app) {
       loadConfiguredZcf()
       registerCircuitPutHandlers()
       registerModePutHandlers()
+      trends = createTrends({
+        enabled: settings.trendsEnabled !== false,
+        directory: settings.trendDirectory,
+        retentionDays: settings.trendRetentionDays,
+        fallbackDir: configDir,
+        log
+      })
+      trends.start()
 
       const ready = (reason = 'nmea2000OutAvailable event') => {
         nmeaReady = true
@@ -1162,6 +1195,8 @@ module.exports = function (app) {
       if (reassembler) reassembler.clear()
       if (monitoringRuntime) monitoringRuntime.clear()
       monitoringRuntime = null
+      if (trends) trends.stop()
+      trends = null
       reassembler = null
       configFastPacket = null
       clearConfigTransfer()
@@ -1201,6 +1236,21 @@ module.exports = function (app) {
           file: mapping ? mapping.fileName : null,
           tankMonitors: mapping ? mapping.tankMonitors : []
         })
+      })
+
+      // Trend data for a chart: ?path=<Signal K path>&range=1h|24h|7d|31d|90d|1y
+      // (ending now), or &from=<ms>&to=<ms> for a custom period.
+      router.get('/trend', (req, res) => {
+        const skPath = String((req.query && req.query.path) || '')
+        if (!skPath) return res.status(400).json({ error: 'path parameter required' })
+        if (!trends) return res.json({ available: false, reason: 'not_started', data: [] })
+        const q = req.query
+        const custom = q.from !== undefined && q.to !== undefined
+        res.json(trends.read(skPath, custom ? { from: Number(q.from), to: Number(q.to) } : q.range))
+      })
+
+      router.get('/trend/status', (_req, res) => {
+        res.json(trends ? trends.status() : { available: false, reason: 'not_started' })
       })
 
       router.get('/circuits', (_req, res) => {

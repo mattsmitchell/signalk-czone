@@ -130,6 +130,34 @@ The dimmed encoding has been checked against controlled observations at 60%, 75%
 
 The decoded secondary state and percentage are retained in the plugin diagnostics for each tracked DC circuit. The public Signal K current path remains unchanged (`electrical.czone.<circuit>.current`).
 
+## Trends
+
+The plugin records each circuit's current and the webapp charts it: the arrow at the end of a circuit row opens that circuit's trend at the top of the page, for the last 1 h, 24 h, 7 d, 31 d, 90 d or 1 y, or for any period chosen under **Custom**.
+
+**What is stored.** The latest value of every `electrical.czone.<circuit>.current` path is sampled every 10 seconds, however often CZone repeats it, and written to plain CSV files in two tiers:
+
+| Tier | File | Row | Used for |
+| --- | --- | --- | --- |
+| Full detail | `<series>/<YYYY-MM-DD>.csv` | `timestamp_ms,value` | charts up to 48 h |
+| Ten-minute summary | `<series>/summary/<YYYY-MM>.csv` | `bucket_ms,min,avg,max` | longer charts: the line is the average, the band is min to max |
+
+Full detail is written on change (plus the last unchanged sample before a change, and at least every 10 minutes), so a circuit that sits at 0 A adds a few kilobytes of data a day (one file per circuit per day, so on a FAT card at least one cluster each). A circuit that stops reporting for a minute is no longer recorded, so a module that drops off the bus shows as a gap, not a flat line. Samples are buffered and appended once a minute.
+
+**Where it goes.**
+
+- `trendDirectory`, if set.
+- On a Victron GX: an SD card or USB stick only, in `signalk-czone/trends` on the card. The GX's internal flash is never written. Without a card, or with a card Signal K cannot write to, nothing is recorded and the configuration panel says why. See "Trends on an SD card or USB stick" in `README-VenusOS.md`.
+- Anywhere else: `trends` in the plugin's data folder.
+
+**How long it is kept.** Nothing is deleted by age unless `trendRetentionDays` is set (31, 90 or 365 days of full detail; summaries stay). When free space falls below a reserve (the larger of 5% and 200 MB on a card; the larger of 10% and 1 GB on a disk shared with the system) the oldest full-detail days are removed first and the oldest summary months only after that, so recording never stops.
+
+**Settings** (in the configuration panel under **Trends**): `trendsEnabled` (default `true`), `trendDirectory` (default blank = automatic), `trendRetentionDays` (default `0` = until storage runs low).
+
+**Routes.**
+
+- `GET /plugins/signalk-czone/trend?path=<Signal K path>&range=1h|24h|7d|31d|90d|1y`, or `&from=<ms>&to=<ms>` for a custom period. Answers `{ available, tier, start, end, gapMs, data, latest }`, where `data` rows are `[t, value]` (full detail) or `[t, avg, min, max]` (summaries, or full detail reduced to about 400 points), and `latest` is the live value while the circuit is reporting.
+- `GET /plugins/signalk-czone/trend/status` answers where trends are going, free space, and how many circuits are being recorded, or the reason trends are off.
+
 ## Installation
 
 This release is self-contained. It includes `index.js`, `package.json`, `README.md`, `LICENSE`, `lib/nmea2000.js`, the ZCF parser in `lib/zcf.js`, and the configuration panel in `public/`.
