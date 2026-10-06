@@ -7,7 +7,7 @@ const czone = require('./lib/czone')
 const nmea = require('./lib/nmea2000')
 const monitoring = require('./lib/monitoring')
 const signalk = require('./lib/signalk')
-const confirmOffLib = require('./lib/confirm-switch')
+const confirmOffLib = require('./lib/confirm-off')
 
 const MAX_UPLOAD_BYTES = 1024 * 1024
 const CZONE_CONFIG_BLOCK_HEADER = 23
