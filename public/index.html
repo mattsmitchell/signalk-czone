@@ -340,6 +340,7 @@
   }
 
   const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  // A padlock after the name of a circuit set to confirm before turning on or off.
   function askMark(c) {
     if (!c.confirmOn && !c.confirmOff) return '';
     const actions = c.confirmOn && c.confirmOff ? 'turning on or off' : (c.confirmOn ? 'turning on' : 'turning off');
@@ -576,6 +577,10 @@
     }
   }
 
+  // Confirm before switching: a question and two buttons, nothing else. Our own
+  // dialog, not window.confirm, which some embedded browsers do not show.
+  // The confirming button is dead for the first half second, so a double tap
+  // on the switch cannot answer the question.
   let closeAsk = null;
   function askSwitch(c, on) {
     return new Promise(resolve => {
@@ -599,6 +604,9 @@
     });
   }
 
+  // The user has said yes. A Signal K PUT carries only the value, so it cannot
+  // say "confirmed" and the plugin refuses it for these circuits; the plugin's
+  // own route can. Confirmation of the result is the same as for a PUT.
   async function postConfirmedSwitch(circuit, on, previous) {
     const requested = on ? 'ON' : 'OFF';
     setPending(circuit, 'state', requested, previous);
