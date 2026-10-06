@@ -563,6 +563,20 @@ module.exports = function (app) {
     ) || null
   }
 
+  function publishSettingsRevision () {
+    if (typeof app.handleMessage !== 'function' && typeof app.emit !== 'function') return
+    const delta = {
+      context: 'vessels.self',
+      updates: [{
+        source: { label: PLUGIN_ID },
+        timestamp: new Date().toISOString(),
+        values: [{ path: 'electrical.czone.settingsRevision', value: Date.now() }]
+      }]
+    }
+    if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
+    else app.emit('delta', delta)
+  }
+
   function publishCurrent (circuit, current, pgn, source) {
     if (!circuit || !Number.isFinite(current)) return
     const pathName = 'electrical.czone.' + circuit.slug + '.current'
@@ -1191,6 +1205,9 @@ module.exports = function (app) {
       loadConfiguredZcf()
       loadConfirmOff()
       loadConfirmOn()
+      // Saving plugin settings restarts the plugin. Publish a fresh revision so
+      // every open webapp knows to re-read /circuits (including nominations).
+      publishSettingsRevision()
       registerCircuitPutHandlers()
       registerModePutHandlers()
 
