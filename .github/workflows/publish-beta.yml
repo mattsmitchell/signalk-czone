@@ -68,6 +68,22 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Verify published version
         run: |
-          name=$(node -p "require('./package.json').name")
-          version=$(node -p "require('./package.json').version")
-          npm view "$name@$version" version
+          node - <<'NODE'
+          const p = require('./package.json')
+          ;(async () => {
+            const url = 'https://registry.npmjs.org/' + encodeURIComponent(p.name) + '/' + encodeURIComponent(p.version)
+            for (let attempt = 1; attempt <= 30; attempt++) {
+              const r = await fetch(url, { signal: AbortSignal.timeout(30000), headers: { 'Cache-Control': 'no-cache' } })
+              if (r.ok) {
+                const published = await r.json()
+                if (published.version !== p.version) throw new Error('Published version mismatch')
+                console.log('Verified ' + p.name + '@' + published.version)
+                return
+              }
+              if (r.status !== 404) throw new Error('Registry verification failed: ' + r.status)
+              console.log('Waiting for npm processing, attempt ' + attempt + '/30')
+              if (attempt < 30) await new Promise(resolve => setTimeout(resolve, 10000))
+            }
+            throw new Error('Package is still unavailable after waiting for npm processing')
+          })().catch(e => { console.error(e); process.exitCode = 1 })
+          NODE
