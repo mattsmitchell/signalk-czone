@@ -1,0 +1,73 @@
+name: Publish npm beta
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - .github/workflows/publish-beta.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-beta-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Validate beta release metadata
+        run: |
+          node - <<'NODE'
+          const p = require('./package.json')
+          if (!/^\d+\.\d+\.\d+-beta\.\d+$/.test(p.version)) throw new Error('Expected a beta prerelease version')
+          if (p.publishConfig?.tag !== 'beta' || p.publishConfig?.access !== 'public') throw new Error('Expected public beta publication')
+          NODE
+      - name: Install dependencies without lifecycle scripts
+        run: npm install --ignore-scripts
+      - name: Run tests
+        run: npm test
+      - name: Pack and verify published files
+        run: |
+          npm pack --json > pack-result.json
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const p = require('./package.json')
+          const result = JSON.parse(fs.readFileSync('pack-result.json', 'utf8'))[0]
+          const files = new Set(result.files.map(f => f.path))
+          const required = [p.main, 'README.md', 'LICENSE', 'CHANGELOG.md', p.signalk?.appIcon, ...(p.signalk?.screenshots || [])].filter(Boolean)
+          for (const file of required) {
+            if (!files.has(file.replace(/^\.\//, ''))) throw new Error('Missing published file: ' + file)
+          }
+          fs.appendFileSync(process.env.GITHUB_ENV, 'PACKAGE_TARBALL=' + result.filename + '\n')
+          NODE
+      - name: Check whether this version already exists
+        id: registry
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const p = require('./package.json')
+          ;(async () => {
+            const r = await fetch('https://registry.npmjs.org/' + encodeURIComponent(p.name) + '/' + encodeURIComponent(p.version), { signal: AbortSignal.timeout(30000) })
+            if (r.status !== 404 && !r.ok) throw new Error('Registry check failed: ' + r.status)
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'exists=' + r.ok + '\n')
+          })().catch(e => { console.error(e); process.exitCode = 1 })
+          NODE
+      - name: Publish beta to npm
+        if: steps.registry.outputs.exists != 'true'
+        run: npm publish "$PACKAGE_TARBALL" --access public --tag beta --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify published version
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          npm view "$name@$version" version
