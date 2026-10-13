@@ -1,4 +1,6 @@
-# signalk-czone
+# signalk-czone — BETA
+
+**Beta software:** validate monitoring first, then test controls on a suitable noncritical circuit. Report issues at https://github.com/mattsmitchell/signalk-czone/issues.
 
 `signalk-czone` makes CZone electrical current information available to Signal K.
 
@@ -167,34 +169,41 @@ The decoded secondary state and percentage are retained in the plugin diagnostic
 
 ## Installation
 
-This release is self-contained. It includes `index.js`, `package.json`, `README.md`, `LICENSE`, `lib/nmea2000.js`, the ZCF parser in `lib/zcf.js`, and the configuration panel in `public/`.
+The plugin installs the pinned `signalk-czone-zcf@0.1.0-beta.1` npm dependency automatically. No separate parser installation or Git checkout is required.
 
-For a manual install, extract the archive directly into `/root/.signalk/node_modules/signalk-czone` (the archive has files at its root), then restart Signal K.
+### Signal K App Store
 
-For an npm-style install from the tarball, use:
+Once this beta is published and available in your App Store:
 
-```bash
-cd /root/.signalk/node_modules
-npm install /path/to/signalk-czone-0.3.0-beta.5.tar.gz --omit=dev
-```
+1. Find **CZone (BETA)** in the App Store (digital switching or NMEA 2000 category) and install it.
+2. Restart Signal K.
+3. Open **Server → Plugin Config → CZone** and use **Upload and install ZCF** to upload your vessel's `.zcf` configuration.
+4. Enable the plugin after configuration, then check the **Diagnostics** tab and published currents before testing controls.
 
-The package uses the canonical `signalk-czone-zcf` GitHub dependency from its `main` branch for current development and testing. Do not modify Signal K Server or canboatjs.
+The plugin is disabled by default until explicitly enabled. Availability of beta versions in the App Store depends on the server version and publication channel.
 
-Then restart Signal K.
+### Explicit npm beta installation
 
-After restart, open Server -> Plugin Config -> CZone. The custom configuration panel should show **Upload and install ZCF**.
-
-For diagnostics:
+After npm publication, run this as the Signal K service user from the server's configuration directory (normally `~/.signalk`, or the directory configured by `SIGNALK_NODE_CONFIG_DIR`):
 
 ```bash
-journalctl -u signalk --since "2 minutes ago" --no-pager | grep CZONE
+cd ~/.signalk
+npm install signalk-czone@beta --omit=dev --ignore-scripts
 ```
 
-Set `debugRaw` true temporarily if completed 28-byte packets need to be inspected.
+Restart Signal K and follow the configuration steps above. For Docker or appliance installations, use the corresponding container/configuration directory and restart method.
 
-Also can see on the configuration tab some the most recent messages
-<img width="1242" height="1442" alt="Image" src="https://github.com/user-attachments/assets/d318f74a-cd27-4fe9-aafb-7bacd6131c51" />
+For installation from a maintainer-provided npm tarball, run `npm install /path/to/signalk-czone-0.3.0-beta.9.tgz --omit=dev --ignore-scripts` from the same configuration directory. Its pinned parser dependency must already be published to npm. Do not simply extract the plugin into `node_modules`: that does not install dependencies.
 
+### Publishing (maintainers)
+
+Publish `signalk-czone-zcf@0.1.0-beta.1` first. Then run `npm install`, `npm test`, and `npm pack --dry-run` in this repository, verify the runtime files and App Store assets, and run `npm publish --tag beta` after npm authentication.
+
+The package defaults to the `beta` tag. Promoting a beta to `latest` for default installs is a separate release decision.
+
+### Beta feedback
+
+Include the plugin and parser versions, Signal K and Node.js versions, NMEA 2000 gateway type, CZone hardware, expected/actual behaviour, and relevant diagnostics when opening an issue. Review logs and configuration files for private vessel information before sharing them.
 
 ## 0.2.4 startup fix
 
