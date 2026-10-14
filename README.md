@@ -169,7 +169,7 @@ The decoded secondary state and percentage are retained in the plugin diagnostic
 
 ## Trends
 
-Off by default: tick **Record circuit current trends** in the configuration panel to turn it on. Boats that already send Signal K data to a database (for example InfluxDB with Grafana) can leave it off. When on, the plugin records each circuit's current and the webapp charts it: the arrow at the end of a circuit row opens that circuit's trend at the top of the page, for the last 1 h, 24 h, 7 d, 31 d, 90 d or 1 y, or for any period chosen under **Custom**.
+Off by default: tick **Record circuit current trends** in the configuration panel to turn it on. Boats that already send Signal K data to a database (for example InfluxDB with Grafana) can leave it off. When on, the plugin records each circuit's current and the webapp charts it: the arrow at the end of a circuit row opens that circuit's trend at the top of the page, for the last 1 h, 24 h, 7 d, 31 d, 90 d or 1 y, or for a period of up to 366 days chosen under **Custom**.
 
 **What is stored.** The latest value of every `electrical.czone.<circuit>.current` path is sampled every 10 seconds, however often CZone repeats it, and written to plain CSV files in two tiers:
 
@@ -182,7 +182,7 @@ Full detail is written on change (plus the last unchanged sample before a change
 
 **Where it goes.**
 
-- `trendDirectory`, if set.
+- `trendDirectory`, if set (on a GX it must be on mounted removable storage).
 - On a Victron GX: an SD card or USB stick only, in `signalk-czone/trends` on the card. The GX's internal flash is never written. Without a card, or with a card Signal K cannot write to, nothing is recorded and the configuration panel says why. See "Trends on an SD card or USB stick" in `README-VenusOS.md`.
 - Anywhere else: `trends` in the plugin's data folder.
 

@@ -1148,7 +1148,7 @@ module.exports = function (app) {
           type: 'string',
           title: 'Trend folder (optional)',
           default: '',
-          description: 'Blank = automatic: a card or stick on a Victron GX, the plugin data folder elsewhere.'
+          description: 'Blank = automatic: a card or stick on a Victron GX, the plugin data folder elsewhere. On a GX, a custom folder must also be on a mounted card or stick.'
         },
         trendRetentionDays: {
           type: 'number',

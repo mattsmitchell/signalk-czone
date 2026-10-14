@@ -217,6 +217,51 @@ const csv = file => fs.readFileSync(file, 'utf8').trim().split('\n').map(l => l.
   assert.deepStrictEqual([bad.status().available, bad.status().reason], [false, 'write_failed'])
 }
 
+// GX custom folders cannot bypass removable storage, including through symlinks.
+{
+  const internal = tmp('internal-')
+  const card = tmp('card-')
+  const mountText = `/dev/mmcblk0p1 ${card} vfat rw 0 0`
+  const forbidden = path.join(internal, 'must-not-create')
+  const bad = createTrendStore({ isVenus: true, directory: forbidden, mountsProvider: () => mountText })
+  assert.strictEqual(bad.status().reason, 'not_removable')
+  assert.strictEqual(fs.existsSync(forbidden), false)
+  fs.symlinkSync(internal, path.join(card, 'escape'))
+  const escaped = createTrendStore({ isVenus: true, directory: path.join(card, 'escape', 'trends'), mountsProvider: () => mountText })
+  assert.strictEqual(escaped.status().reason, 'not_removable')
+  fs.symlinkSync(internal, path.join(card, 'signalk-czone'))
+  const automatic = createTrendStore({ isVenus: true, mountsProvider: () => mountText })
+  assert.strictEqual(automatic.status().reason, 'not_removable')
+  const good = createTrendStore({ isVenus: true, directory: path.join(card, 'custom'), mountsProvider: () => mountText })
+  assert.strictEqual(good.status().location, 'removable')
+  good.record('x', 2)
+  assert.strictEqual(good.flush().written, 1)
+}
+
+// An unmount invalidates the cached location even when its directories remain.
+for (const custom of [false, true]) {
+  const card = tmp('unmounted-')
+  let mounts = `/dev/mmcblk0p1 ${card} vfat rw 0 0`
+  const store = createTrendStore({ isVenus: true, directory: custom ? path.join(card, 'custom') : undefined, mountsProvider: () => mounts })
+  assert.strictEqual(store.status().available, true)
+  store.record('x', 2)
+  mounts = ''
+  assert.strictEqual(store.flush().written, 0)
+  assert.strictEqual(store.status().available, false)
+  assert.strictEqual(fs.existsSync(path.join(card, custom ? 'custom' : 'signalk-czone/trends', 'x')), false)
+  mounts = `/dev/mmcblk0p1 ${card} vfat rw 0 0`
+  store.record('x', 3)
+  assert.strictEqual(store.flush().written, 1)
+}
+
+// Reject invalid Date values and unbounded custom periods before reading files.
+{
+  const store = createTrendStore({ directory: tmp('range-') })
+  for (const range of [{ from: 0, to: 1e20 }, { from: -1e20, to: 0 }, { from: 0, to: 367 * 86400e3 }]) {
+    assert.strictEqual(store.read('x', range).error, 'bad_range')
+  }
+}
+
 // --- Bucketing keeps long ranges to a few hundred points.
 {
   const data = Array.from({ length: 2880 }, (_, i) => [i * 30e3, i])
