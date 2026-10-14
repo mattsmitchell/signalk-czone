@@ -9,8 +9,10 @@ const trendModule = require('../lib/trends')
 const { createTrends: realCreateTrends, validSeries, SAMPLE_MS, STALE_MS } = trendModule
 // Generic tests use temporary folders regardless of the machine running them.
 // GX storage tests below explicitly opt into isVenus: true and fake mounts.
-const createTrendStore = options => realCreateTrendStore({ isVenus: false, ...options })
-const createTrends = options => realCreateTrends({ isVenus: false, ...options })
+// Ordinary retention tests assume ample space; space-guard tests override it.
+const ampleSpace = () => ({ free: 80e9, total: 100e9 })
+const createTrendStore = options => realCreateTrendStore({ isVenus: false, spaceProvider: ampleSpace, ...options })
+const createTrends = options => realCreateTrends({ isVenus: false, spaceProvider: ampleSpace, ...options })
 // The plugin integration harness also uses the simulated non-GX store. Restore
 // the export after loading: production platform detection remains unchanged.
 let pluginFactory
