@@ -90,14 +90,9 @@ const path = require('path')
 const pluginFactory = require('../index')
 
 const fixtureName = 'Compass-Rose-28.06.26.zcf'
-const fixtureUrl = 'https://raw.githubusercontent.com/mattsmitchell/signalk-czone-zcf/main/test/fixtures/' + fixtureName
 
 async function fixture () {
-  const local = path.join(__dirname, 'fixtures', fixtureName)
-  if (fs.existsSync(local)) return fs.readFileSync(local)
-  const response = await fetch(fixtureUrl)
-  assert.strictEqual(response.ok, true, fixtureName + ': canonical fixture download failed (' + response.status + ')')
-  return Buffer.from(await response.arrayBuffer())
+  return fs.readFileSync(path.join(__dirname, 'fixtures', fixtureName))
 }
 
 async function pluginTest () {

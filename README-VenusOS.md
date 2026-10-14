@@ -68,6 +68,126 @@ To force the active ecosystem environment to scan, register, and spin up your ne
 3. Select and upload your boat's active CZone `.zcf` configuration file from your computer. 
 4. The plugin will automatically extract, validate, and dynamically map your customized circuit name identities directly to the web dashboard interface.
 
+### Enable SD card storage for trends on a Cerbo GX
+
+These steps apply whether the plugin was installed through the Signal K App Store or manually. Trend recording is **off by default**. On a Victron GX it requires a writable SD card or USB stick; the plugin does not use internal flash for trend storage.
+
+Use a FAT32 SD card of 16 GB or more. Insert it into the Cerbo GX and run the following commands as `root` over SSH. The examples use the Cerbo SD card device `/dev/mmcblk0p1`, mounted at `/run/media/mmcblk0p1`. Verify these paths before proceeding; for a USB stick, substitute its device and mount point.
+
+#### 1. Check the card and its permissions
+
+```sh
+grep ' /run/media/mmcblk0p1 ' /proc/mounts
+```
+
+The filesystem should be `vfat` and mounted `rw`. A typical initial mount has `fmask=0022,dmask=0022`: root can write, but the `signalk` user cannot. The configuration panel then reports **Card found … but Signal K cannot write to it**, and trends are not recorded.
+
+FAT permissions are set at mount time. `chmod` on the card or a `mount -o remount` does not apply the required masks here: a full unmount and mount is needed. If the card is mounted `ro` or uses another filesystem, investigate that before running these commands.
+
+#### 2. Enable writing now
+
+Pause the VRM logger, unmount the card, mount it with writable file and directory masks, then resume the logger:
+
+```sh
+svc -d /service/vrmlogger
+
+if umount /run/media/mmcblk0p1; then
+  mount -t vfat -o rw,relatime,fmask=0000,dmask=0000 \
+    /dev/mmcblk0p1 /run/media/mmcblk0p1
+fi
+
+svc -u /service/vrmlogger
+```
+
+If unmounting reports **busy**, do not force it. Identify the process using the card before retrying. These masks allow all local users, including `signalk`, to write to the card.
+
+Verify the mount and test writing as the actual Signal K user:
+
+```sh
+grep ' /run/media/mmcblk0p1 ' /proc/mounts
+
+setpriv --init-groups --reuid signalk --regid signalk \
+  sh -c 'touch /run/media/mmcblk0p1/.signalk-write-test &&
+         rm /run/media/mmcblk0p1/.signalk-write-test'
+```
+
+The mount should show `fmask=0000,dmask=0000`. No output from the write test means success. These permissions last until the card is remounted or the GX reboots; complete the next step to apply them at boot.
+
+#### 3. Apply the permissions at boot
+
+Create `/data/sdcard-rw.sh`. The `/data` directory persists across firmware updates.
+
+```sh
+cat > /data/sdcard-rw.sh <<'EOF'
+#!/bin/sh
+D=/dev/mmcblk0p1
+M=/run/media/mmcblk0p1
+
+# Wait up to 60 seconds for Venus OS to mount the card.
+i=0
+while ! grep -q "^$D $M vfat " /proc/mounts; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && exit 0
+  sleep 2
+done
+
+# Leave an already-correct mount alone.
+if grep "^$D $M vfat " /proc/mounts |
+   grep -q 'fmask=0000,dmask=0000'; then
+  exit 0
+fi
+
+svc -d /service/vrmlogger
+trap 'svc -u /service/vrmlogger' EXIT
+
+# Retry briefly if the card is busy; never force an unmount.
+i=0
+while ! umount "$M"; do
+  i=$((i + 1))
+  [ "$i" -ge 10 ] && exit 1
+  sleep 1
+done
+
+mount -t vfat -o rw,relatime,fmask=0000,dmask=0000 "$D" "$M"
+EOF
+
+chmod +x /data/sdcard-rw.sh
+```
+
+Register it in `/data/rc.local`. These commands preserve existing startup commands, make a backup, and insert the call before any `exit 0` so it will run. Running them again does not add a duplicate call.
+
+```sh
+[ -f /data/rc.local ] || echo '#!/bin/sh' > /data/rc.local
+cp -p /data/rc.local /data/rc.local.before-sdcard
+
+if ! grep -q '/data/sdcard-rw.sh' /data/rc.local; then
+  awk '
+    /^[[:space:]]*exit[[:space:]]+0/ && !added {
+      print "/data/sdcard-rw.sh &"
+      added=1
+    }
+    { print }
+    END { if (!added) print "/data/sdcard-rw.sh &" }
+  ' /data/rc.local > /data/rc.local.new &&
+    cat /data/rc.local.new > /data/rc.local &&
+    rm /data/rc.local.new
+fi
+
+chmod +x /data/rc.local
+/data/sdcard-rw.sh
+```
+
+The script does nothing if there is no card or the masks are already correct. Otherwise it pauses the VRM logger during the unmount/mount operation and resumes it on exit. After the next reboot, repeat the mount check and the `signalk` write test from step 2.
+
+#### 4. Turn on trend recording
+
+1. Open **Signal K Admin → Server → Plugin Config → CZone**.
+2. In **Trends**, tick **Record circuit current trends**.
+3. Leave **Trend folder (optional)** blank for automatic SD card selection. On a GX, a custom folder must also be on mounted removable storage.
+4. Save the plugin configuration if prompted and check the **Trends** status. It should report **Recording … on the SD card or USB stick at /run/media/mmcblk0p1**. If it still reports a write error, repeat the write test above.
+
+Automatic storage uses `/run/media/mmcblk0p1/signalk-czone/trends`. Current values are sampled every 10 seconds and buffered writes are flushed once a minute. In the webapp, the arrow at the end of a circuit row opens its current trend when recording is enabled.
+
 ---
 
 ### Real-Time Diagnostics

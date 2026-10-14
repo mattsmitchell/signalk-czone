@@ -7,10 +7,7 @@ const path = require('path')
 const pluginFactory = require('../index')
 
 const zcfSource = path.join(__dirname, 'fixtures', 'SugarShack-20260927-01.zcf')
-if (!fs.existsSync(zcfSource)) {
-  console.log('Step 3 write tests skipped: live ZCF not present')
-  process.exit(0)
-}
+assert(fs.existsSync(zcfSource), 'Required ZCF fixture is missing: ' + zcfSource)
 
 const configPath = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-write-'))
 const putHandlers = new Map()
@@ -104,7 +101,7 @@ safePlugin.start({})
 const safeResult = safePutHandlers.get(galleyState)('vessels.self', galleyState, true, () => {})
 assert.strictEqual(safeResult.statusCode, 400)
 assert.strictEqual(safeEmitted.length, 0)
-assert(safeLogs.some(message => message.includes('CZone send blocked: NMEA 2000 sending is disabled')))
+assert(safeLogs.some(message => message.includes('CZone send blocked: CZone write control is disabled')))
 safePlugin.stop()
 
 // Output availability is a second independent fail-closed gate.

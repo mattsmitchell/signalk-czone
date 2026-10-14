@@ -1,12 +1,9 @@
 'use strict'
 
 const assert = require('assert')
-const fs = require('fs')
-const os = require('os')
 const path = require('path')
 const zcf = require('../lib/zcf')
 
-const fixtureBaseUrl = 'https://raw.githubusercontent.com/mattsmitchell/signalk-czone-zcf/main/test/fixtures'
 const fixtures = [
   'SugarShack-20260927-01.zcf',
   'TestBench.zcf',
@@ -16,14 +13,10 @@ const fixtures = [
   'Meitaki-07.04.25.zcf'
 ]
 
-const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-status-mapping-'))
+const fixtureDir = path.join(__dirname, 'fixtures')
 
 async function loadFixture (filename) {
-  const response = await fetch(fixtureBaseUrl + '/' + filename)
-  assert.strictEqual(response.ok, true, filename + ': canonical fixture download failed (' + response.status + ')')
-  const fixturePath = path.join(fixtureDir, filename)
-  fs.writeFileSync(fixturePath, Buffer.from(await response.arrayBuffer()))
-  return zcf.load(fixturePath)
+  return zcf.load(path.join(fixtureDir, filename))
 }
 
 function assertMappingShape (filename, circuit) {

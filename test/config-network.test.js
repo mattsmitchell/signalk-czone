@@ -9,10 +9,7 @@ const czone = require('../lib/czone')
 const zcf = require('../lib/zcf')
 
 const sourceZcf = path.join(__dirname, 'fixtures', 'SugarShack-20260927-01.zcf')
-if (!fs.existsSync(sourceZcf)) {
-  console.log('Network configuration tests skipped: live ZCF not present')
-  process.exit(0)
-}
+assert(fs.existsSync(sourceZcf), 'Required ZCF fixture is missing: ' + sourceZcf)
 
 const configPath = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-network-'))
 const rawListeners = new Map()
@@ -57,7 +54,8 @@ assert(emitted.some(line => line.split(',')[2] === '65290' && line.endsWith(',27
 function fastFrames (pgn, source, payload, sequence = 0) {
   const frames = []
   const first = payload.subarray(0, 6)
-  const canId = pgn === 130816 ? (0x1CFF0000 | source) : (0x1C000000 | ((pgn & 0xffff) << 8) | source)
+  // PGN 130816 is 0x1FF00: its data-page bit must be set in the CAN ID.
+  const canId = pgn === 130816 ? (0x1DFF0000 | source) : (0x1C000000 | ((pgn & 0xffff) << 8) | source)
   frames.push(`2026-09-27T06:00:00.000Z R ${canId.toString(16).padStart(8, '0')} ${(sequence << 5).toString(16).padStart(2, '0')} ${payload.length.toString(16).padStart(2, '0')} ${Array.from(first, b => b.toString(16).padStart(2, '0')).join(' ')}`)
   let offset = 6
   let frameNo = 1

@@ -42,7 +42,7 @@
     "icon.png"
   ],
   "scripts": {
-    "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js && node test/circuit-state.test.js && node test/czone.test.js && node test/nmea2000.test.js && node test/control-x-plus.test.js && node test/signalk.test.js && node test/write.test.js && node test/circuit-status.test.js && node test/status-mapping-regression.test.js && node test/state.test.js && node test/config-network.test.js && node test/config-namespace.test.js && node test/monitoring.test.js && node test/confirm-off.test.js"
+    "test": "node test/zcf.test.js && node test/zcf-fixtures.test.js && node test/circuit-state.test.js && node test/czone.test.js && node test/nmea2000.test.js && node test/control-x-plus.test.js && node test/signalk.test.js && node test/write.test.js && node test/circuit-status.test.js && node test/status-mapping-regression.test.js && node test/state.test.js && node test/config-network.test.js && node test/config-namespace.test.js && node test/monitoring.test.js && node test/confirm-off.test.js && node test/webapp-current.test.js && node test/trends.test.js && node --require ./test/helpers/gx-low-space.cjs test/trends.test.js"
   },
   "dependencies": {
     "signalk-czone-zcf": "github:mattsmitchell/signalk-czone-zcf#4991170ac20a3506bfcc1131b2c7dd025c4a983c"
