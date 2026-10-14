@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0-beta.10
+
+- Adds opt-in circuit current trends with preset and custom chart periods, CSV storage, summaries and retention settings.
+- Restricts GX trend storage to mounted SD cards or USB sticks, including custom folders and card removal checks.
+- Preserves live circuit amps through webapp refreshes, including when trend recording is disabled.
+- Documents Cerbo GX SD card write permissions and persistent boot setup.
+- Includes canonical test fixtures, repairs stale integration tests and tests simulated GX low-space operation.
+
 ## 0.3.0-beta.9
 
 - Marks the App Store listing as CZone (BETA).
