@@ -4,9 +4,18 @@ const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { findStorageMount, createTrendStore, bucketize, sanitizePath, HEARTBEAT_MS, BUCKET_MS } = require('../lib/trends/storage')
-const { createTrends, validSeries, SAMPLE_MS, STALE_MS } = require('../lib/trends')
-const pluginFactory = require('../index')
+const { findStorageMount, createTrendStore: realCreateTrendStore, bucketize, sanitizePath, HEARTBEAT_MS, BUCKET_MS } = require('../lib/trends/storage')
+const trendModule = require('../lib/trends')
+const { createTrends: realCreateTrends, validSeries, SAMPLE_MS, STALE_MS } = trendModule
+// Generic tests use temporary folders regardless of the machine running them.
+// GX storage tests below explicitly opt into isVenus: true and fake mounts.
+const createTrendStore = options => realCreateTrendStore({ isVenus: false, ...options })
+const createTrends = options => realCreateTrends({ isVenus: false, ...options })
+// The plugin integration harness also uses the simulated non-GX store. Restore
+// the export after loading: production platform detection remains unchanged.
+let pluginFactory
+trendModule.createTrends = createTrends
+try { pluginFactory = require('../index') } finally { trendModule.createTrends = realCreateTrends }
 
 const tmp = prefix => fs.mkdtempSync(path.join(os.tmpdir(), prefix))
 const csv = file => fs.readFileSync(file, 'utf8').trim().split('\n').map(l => l.split(',').map(Number))
