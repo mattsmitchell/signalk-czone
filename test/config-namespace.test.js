@@ -7,10 +7,7 @@ const path = require('path')
 const pluginFactory = require('../index')
 
 const fixture = path.join(__dirname, 'fixtures', 'SugarShack-20260927-01.zcf')
-if (!fs.existsSync(fixture)) {
-  console.log('Configuration namespace tests skipped: fixture not present')
-  process.exit(0)
-}
+assert(fs.existsSync(fixture), 'Required ZCF fixture is missing: ' + fixture)
 
 function makeApp (configPath, statuses) {
   return {

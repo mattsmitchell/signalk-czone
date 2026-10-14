@@ -7,10 +7,7 @@ const path = require('path')
 const pluginFactory = require('../index')
 
 const zcfSource = path.join(__dirname, 'fixtures', 'SugarShack-20260927-01.zcf')
-if (!fs.existsSync(zcfSource)) {
-  console.log('Step 5 state tests skipped: live ZCF not present')
-  process.exit(0)
-}
+assert(fs.existsSync(zcfSource), 'Required ZCF fixture is missing: ' + zcfSource)
 
 const configPath = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-state-'))
 const putHandlers = new Map()
@@ -99,7 +96,8 @@ assert.strictEqual(brightnessAfterStatus, brightnessBeforeStatus)
 const galleyStatusPage = Math.floor(galley.statusBit / 8)
 const galleyStatusSlot = galley.statusBit % 8
 const dcPayload = makeDcPayload(galley.statusModule, galleyStatusPage, galleyStatusSlot, 60, 0x07e8) // 6.0 A, 100%
-for (const frame of fastFrames('1CFF06', '29', dcPayload)) rawListeners.get('canboatjs:rawoutput')(frame)
+// PGN 130822 is 0x1FF06; 1CFF06 would encode PGN 65286 instead.
+for (const frame of fastFrames('1DFF06', '29', dcPayload)) rawListeners.get('canboatjs:rawoutput')(frame)
 const brightnessDelta = deltas.find(d => d.updates[0].values.some(v => v.path === 'electrical.czone.Galley_Lights.switch.brightness'))
 assert(brightnessDelta)
 
@@ -122,7 +120,7 @@ assert.strictEqual(brightnessDelta.updates[0].source.pgn, 130822)
 const currentPath = 'electrical.czone.Galley_Lights.current'
 const currentCountBeforeRepeat = deltas.filter(d => d.updates[0].values.some(v => v.path === currentPath)).length
 const brightnessCountBeforeRepeat = deltas.filter(d => d.updates[0].values.some(v => v.path === 'electrical.czone.Galley_Lights.switch.brightness')).length
-for (const frame of fastFrames('1CFF06', '29', dcPayload, 3)) rawListeners.get('canboatjs:rawoutput')(frame)
+for (const frame of fastFrames('1DFF06', '29', dcPayload, 3)) rawListeners.get('canboatjs:rawoutput')(frame)
 const currentCountAfterRepeat = deltas.filter(d => d.updates[0].values.some(v => v.path === currentPath)).length
 const brightnessCountAfterRepeat = deltas.filter(d => d.updates[0].values.some(v => v.path === 'electrical.czone.Galley_Lights.switch.brightness')).length
 assert.strictEqual(currentCountAfterRepeat, currentCountBeforeRepeat + 1)
@@ -130,12 +128,12 @@ assert.strictEqual(brightnessCountAfterRepeat, brightnessCountBeforeRepeat)
 
 // 50% and 0% transitions are decoded from the DC level field.
 const halfPayload = makeDcPayload(galley.statusModule, galleyStatusPage, galleyStatusSlot, 32, 0x05f4) // (1524-1024)/10 = 50%
-for (const frame of fastFrames('1CFF06', '29', halfPayload, 1)) rawListeners.get('canboatjs:rawoutput')(frame)
+for (const frame of fastFrames('1DFF06', '29', halfPayload, 1)) rawListeners.get('canboatjs:rawoutput')(frame)
 const halfBrightness = deltas.slice().reverse().find(d => d.updates[0].values.some(v => v.path === 'electrical.czone.Galley_Lights.switch.brightness')).updates[0].values.find(v => v.path.endsWith('.switch.brightness'))
 assert.strictEqual(halfBrightness.value, 0.5)
 
 const offPayload = makeDcPayload(galley.statusModule, galleyStatusPage, galleyStatusSlot, 0, 0x0400)
-for (const frame of fastFrames('1CFF06', '29', offPayload, 2)) rawListeners.get('canboatjs:rawoutput')(frame)
+for (const frame of fastFrames('1DFF06', '29', offPayload, 2)) rawListeners.get('canboatjs:rawoutput')(frame)
 const telemetryStateAfterOff = deltas.slice().reverse().find(d => d.updates[0].values.some(v => v.path === 'electrical.czone.Galley_Lights.switch.state'))
 assert.strictEqual(telemetryStateAfterOff.updates[0].values.find(v => v.path.endsWith('.switch.state')).value, false)
 
