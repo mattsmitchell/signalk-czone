@@ -68,6 +68,38 @@ To force the active ecosystem environment to scan, register, and spin up your ne
 3. Select and upload your boat's active CZone `.zcf` configuration file from your computer. 
 4. The plugin will automatically extract, validate, and dynamically map your customized circuit name identities directly to the web dashboard interface.
 
+### Trends on an SD card or USB stick
+The plugin records circuit current trends only to removable storage on a GX, never to internal flash. Venus OS mounts a FAT card writable by `root` only, and Signal K runs as the `signalk` user, so with a new card the configuration panel reports *"Card found … but Signal K cannot write to it"* and nothing is recorded. FAT permissions can only be set when a card is mounted, so the card has to be mounted again with open permissions at each boot.
+
+Use a FAT32 card of 16 GB or more. As `root` over SSH, create `/data/sdcard-rw.sh` (`/data` survives firmware updates):
+```sh
+#!/bin/sh
+# Let Signal K (user signalk) write trend data to the SD card. Venus OS mounts
+# FAT cards writable by root only, and FAT masks can only be set at mount time.
+D=/dev/mmcblk0p1
+M=/run/media/mmcblk0p1
+i=0
+while [ $i -lt 30 ] && ! grep -q "^$D $M vfat" /proc/mounts; do sleep 2; i=$((i+1)); done
+grep -q "^$D $M vfat" /proc/mounts || exit 0
+grep "^$D $M vfat" /proc/mounts | grep -q "fmask=0000" && exit 0
+svc -d /service/vrmlogger 2>/dev/null
+n=0
+while grep -q "^$D " /proc/mounts && [ $n -lt 10 ]; do umount $M 2>/dev/null || sleep 1; n=$((n+1)); done
+grep -q "^$D " /proc/mounts || mount -t vfat -o rw,relatime,umask=0000 $D $M
+svc -u /service/vrmlogger 2>/dev/null
+```
+Then make it run at every boot, and run it once now:
+```bash
+chmod +x /data/sdcard-rw.sh
+[ -f /data/rc.local ] || echo '#!/bin/sh' > /data/rc.local
+grep -q '/data/sdcard-rw.sh' /data/rc.local || echo '/data/sdcard-rw.sh &' >> /data/rc.local
+chmod +x /data/rc.local
+/data/sdcard-rw.sh
+```
+The script waits for the card, does nothing if there is no card or it is already open, and stops the VRM logger only for the moment the remount takes. `mmcblk0p1` is the SD card slot of a Cerbo GX (the internal storage is `mmcblk1`); for a USB stick change `D` and `M` to its device and mount point as shown by `grep media /proc/mounts`.
+
+Within a minute the **Trends** box in the plugin configuration panel changes to *"Recording … on the SD card or USB stick at /run/media/mmcblk0p1"*.
+
 ---
 
 ### Real-Time Diagnostics
