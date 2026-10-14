@@ -423,6 +423,7 @@ async function main () {
   const published = p.deltas.flatMap(d => d.updates[0].values).filter(v => v.path === galleyPath).map(v => v.value)
   assert.deepStrictEqual(published, [6, 6.1, 6.2]) // every packet is still published
   assert(p.get('/trend/status').body.trending >= 2)
+  assert.strictEqual(p.get('/circuits').body.circuits.find(c => c.slug === 'Galley_Lights').state.current, 6.2)
 
   // Nothing is on disk before the first sample; stopping stores what is in hand.
   assert.strictEqual(fs.existsSync(path.join(trendDir, galleyPath)), false)
@@ -483,6 +484,7 @@ async function main () {
   status = off.get('/trend/status').body
   assert.deepStrictEqual([status.available, status.reason, status.enabled], [false, 'disabled', false])
   assert.strictEqual(off.get('/trend', { path: galleyPath }).body.reason, 'disabled')
+  assert.strictEqual(off.get('/circuits').body.circuits.find(c => c.slug === 'Galley_Lights').state.current, 6)
   off.plugin.stop()
   assert.strictEqual(fs.existsSync(path.join(off.dataDir, 'trends')), false)
 

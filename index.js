@@ -582,6 +582,9 @@ module.exports = function (app) {
 
   function publishCurrent (circuit, current, pgn, source) {
     if (!circuit || !Number.isFinite(current)) return
+    const state = runtimeState.get(circuit.name) || {}
+    state.current = current
+    runtimeState.set(circuit.name, state)
     const pathName = 'electrical.czone.' + circuit.slug + '.current'
     const sourceInfo = {
       label: pgn === CURRENT_PGN_AC ? 'CZone-AC' : 'CZone-DC',

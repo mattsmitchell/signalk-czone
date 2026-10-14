@@ -547,7 +547,9 @@
         const fresh = bySlug.get(c.slug);
         if (!fresh) return c;
         const p = pending.get(nameKey(c));
-        return { ...fresh, state: p ? c.state : (fresh.state || c.state) };
+        // REST snapshots may omit current; retain live telemetry while merging
+        // authoritative state/brightness. An explicit zero must still replace it.
+        return { ...fresh, state: p ? c.state : { ...(c.state || {}), ...(fresh.state || {}) } };
       });
     }
     status = data;
