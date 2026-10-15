@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0-beta.12
+
+- Keeps the connection indicator disconnected when circuit-list REST refreshes succeed but the live WebSocket is down; shows connecting/reconnecting status and the snapshot time.
+
 ## 0.3.0-beta.11
 
 - Uses the npm `latest` tag for default installation and App Store updates while retaining the BETA version and listing labels.
