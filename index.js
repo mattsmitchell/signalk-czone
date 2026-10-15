@@ -9,6 +9,9 @@ const monitoring = require('./lib/monitoring')
 const { createTrends } = require('./lib/trends')
 const signalk = require('./lib/signalk')
 const confirmOffLib = require('./lib/confirm-off')
+const { createBridge, bridgeEntries } = require('./lib/bridge')
+const { createShellyDriver } = require('./lib/bridge/shelly')
+const { createVictronDriver } = require('./lib/bridge/victron')
 
 const MAX_UPLOAD_BYTES = 1024 * 1024
 const CZONE_CONFIG_BLOCK_HEADER = 23
@@ -104,6 +107,49 @@ module.exports = function (app) {
   let nmeaReadyAt = null
   let lastNmeaOutput = null
   let runtimeState = new Map()
+
+  // Third-party switches (lib/bridge): a CZone circuit, normally a virtual
+  // circuit added for the purpose, linked to a switch that is not on the CZone
+  // network: a Victron switchable output on the GX's D-Bus (a Shelly added to
+  // the GX, a GX relay set to Manual, a Node-RED virtual switch) or a Shelly
+  // reached directly by IP. lib/bridge holds the linking rules and the drivers
+  // and has no CZone or Signal K code in it.
+  let bridgeBus = null
+  function getBridgeBus () {
+    if (bridgeBus) return bridgeBus
+    let dbus
+    try { dbus = require('dbus-native') } catch (_) { throw new Error('D-Bus support is not installed (only available on a Victron GX)') }
+    bridgeBus = dbus.systemBus()
+    if (bridgeBus && bridgeBus.connection && typeof bridgeBus.connection.on === 'function') {
+      bridgeBus.connection.on('error', err => { log(`Bridge D-Bus: ${err.message}`); closeBridgeBus() })
+    }
+    return bridgeBus
+  }
+  function closeBridgeBus () {
+    if (!bridgeBus) return
+    try { if (bridgeBus.connection && typeof bridgeBus.connection.end === 'function') bridgeBus.connection.end() } catch (_) {}
+    bridgeBus = null
+  }
+  const bridgeDrivers = { victron: createVictronDriver({ getBus: getBridgeBus }), shelly: createShellyDriver() }
+  const bridge = createBridge({
+    log: m => log(m),
+    readCircuit: name => {
+      const st = runtimeState.get(name)
+      return st && st.statusObserved && (st.state === 'ON' || st.state === 'OFF') ? st.state === 'ON' : undefined
+    },
+    writeCircuit: (name, on) => {
+      const c = mapping && mapping.circuits.find(x => x.name === name)
+      if (!c) throw new Error(`no circuit "${name}" in the CZone configuration`)
+      // A link cannot ask "are you sure?": a circuit nominated to confirm is
+      // never switched that way by a link, unless other apps are allowed to.
+      // Refused for good (not retried); the link shows why.
+      const refuse = text => { const err = new Error(text); err.permanent = true; throw err }
+      if (!on && confirmOff.has(c.name) && settings.confirmOffAllowElsewhere !== true) refuse('not switched off: this circuit asks before turning off')
+      if (on && confirmOn.has(c.name) && settings.confirmOnAllowElsewhere !== true) refuse('not switched on: this circuit asks before turning on')
+      sendCircuitState(c, on)
+    },
+    drivers: bridgeDrivers
+  })
   let monitoringRuntime = null
   // Trend recording of circuit current (see lib/trends).
   let trends = null
@@ -718,6 +764,13 @@ module.exports = function (app) {
   // bitmap. The runtime module/bit mapping is decoded from the ZCF status
   // table; it is intentionally not inferred from the primary ZCF
   // module/channel identity.
+  function startBridge () {
+    const entries = bridgeEntries(settings.bridges)
+    const known = entries.filter(e => mapping && mapping.circuits.some(c => c.name === e.circuit))
+    for (const e of entries) if (!known.includes(e)) log(`Third-party switch: circuit "${e.circuit}" is not in the CZone configuration; link ignored`)
+    bridge.start(known)
+  }
+
   function decodeCzoneCircuitStatus (frame) {
     if (!frame || frame.pgn !== 65284 || !frame.data || frame.data.length !== 8) return
     const data = frame.data
@@ -763,6 +816,7 @@ module.exports = function (app) {
         }
       }
 
+      bridge.onCircuit(circuit.name, enabled) // a linked switch follows at once
       const stateSource = signalk.nmea2000Source(frame.source, frame.pgn)
       const observedState = enabled ? 'ON' : 'OFF'
       log(`CZone STATE: ${circuit.name} -> ${observedState} (runtime ${Number(circuit.statusModule).toString(16).padStart(2, '0')}:${Number(circuit.statusMask).toString(16).padStart(8, '0')}, src=${frame.source})`)
@@ -1221,6 +1275,23 @@ module.exports = function (app) {
           title: 'Let other apps turn those circuits off',
           default: false,
           description: 'Other Signal K apps switch with a PUT and cannot ask "are you sure?". Unticked, an off from them is refused with a message; the circuit can still be turned off from the webapp or a CZone keypad.'
+        },
+        bridges: {
+          type: 'array',
+          title: 'Third-party switches',
+          description: 'CZone circuits (normally virtual circuits added for the purpose) linked to a switch that is not on the CZone network. Set up in the configuration panel.',
+          default: [],
+          items: {
+            type: 'object',
+            properties: {
+              circuit: { type: 'string', title: 'CZone circuit' },
+              target: { type: 'string', title: 'Linked to', enum: ['victron', 'shelly'], enumNames: ['A Victron output (through the GX)', 'A Shelly (directly, by IP address)'] },
+              output: { type: 'string', title: 'Victron output (service#id)' },
+              label: { type: 'string', title: 'Name' },
+              host: { type: 'string', title: 'Shelly IP address' },
+              channel: { type: 'number', title: 'Shelly channel', default: 0 }
+            }
+          }
         }
       }
     }),
@@ -1245,6 +1316,7 @@ module.exports = function (app) {
         log
       })
       trends.start()
+      startBridge()
 
       const ready = (reason = 'nmea2000OutAvailable event') => {
         nmeaReady = true
@@ -1320,6 +1392,8 @@ module.exports = function (app) {
       monitoringRuntime = null
       if (trends) trends.stop()
       trends = null
+      bridge.stop()
+      closeBridgeBus()
       reassembler = null
       configFastPacket = null
       clearConfigTransfer()
@@ -1417,6 +1491,21 @@ module.exports = function (app) {
         })
       })
 
+      // Third-party switches: link status, the GX's outputs, a Shelly test.
+      router.get('/bridge/status', (_req, res) => res.json({ links: bridge.status() }))
+      router.get('/bridge/outputs', (_req, res) => {
+        bridgeDrivers.victron.list()
+          .then(outputs => res.json({ available: true, outputs }))
+          .catch(err => res.json({ available: false, outputs: [], detail: `No Victron GX found (${err.message})` }))
+      })
+      router.get('/bridge/shelly', (req, res) => {
+        const host = String((req.query && req.query.host) || '').trim()
+        if (!/^[\w.-]+(:\d{1,5})?$/.test(host)) return res.status(400).json({ ok: false, detail: 'Give the Shelly\'s IP address' })
+        bridgeDrivers.shelly.status({ host, channel: Number(req.query.channel) || 0 })
+          .then(st => res.json({ ok: typeof st.output === 'boolean', output: st.output, power: st.apower, voltage: st.voltage }))
+          .catch(err => res.json({ ok: false, detail: err.message }))
+      })
+
       router.get('/configuration', (_req, res) => {
         res.json({
           source: settings.configurationSource || 'installedZcf',
@@ -1427,7 +1516,10 @@ module.exports = function (app) {
           networkRead: lastNetworkConfig ? { ...lastNetworkConfig, blocks: undefined } : null,
           nmeaReady,
           // The circuits offered under "Confirm before turning off".
-          circuitNames: confirmOffLib.choices({}, mapping ? mapping.circuits : []).map(n => n.value)
+          circuitNames: confirmOffLib.choices({}, mapping ? mapping.circuits : []).map(n => n.value),
+          // Every circuit, for linking a third-party switch (a virtual circuit
+          // added for one may not be listed in the webapp).
+          allCircuitNames: mapping ? mapping.circuits.map(c => c.name).sort((a, b) => a.localeCompare(b)) : []
         })
       })
 
@@ -1592,5 +1684,7 @@ module.exports = function (app) {
     }
   }
 
+  // For tests: run one bridge poll now instead of waiting for its timer.
+  Object.defineProperty(plugin, '_bridgePoll', { value: () => bridge.poll(), enumerable: false })
   return plugin
 }
