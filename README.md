@@ -423,3 +423,20 @@ Only the installed path is stored in plugin configuration; the binary ZCF is not
 - **0.3.0-beta.5** — added explicit AC/DC source classification for downstream telemetry storage while retaining stable circuit-name paths and the diagnostics/status tooling.
 
 The beta is intended for extended real-world testing before a stable `0.3.0` release.
+
+## Fullscreen and tablet home-screen launch
+
+Open `/signalk-czone/` directly in your browser. The **Fullscreen** button beside
+CZone enters fullscreen; tap **Exit fullscreen** or use the browser's exit gesture
+(or Escape on desktop) to leave. It appears only when the browser exposes the
+fullscreen API. Embedded views may need permission from their parent page.
+
+For a home-screen launch, open the app over **trusted HTTPS**, then use your
+browser's **Install app** / **Add to Home Screen** option (Safari: Share → Add to
+Home Screen). Compatible browsers launch CZone in standalone mode without the
+usual address bar. Installation and fullscreen support vary by device/browser.
+The manifest uses relative URLs, so it follows your server's hostname and port;
+no boat IP address is hard-coded. Plain HTTP on a LAN IP may only offer a shortcut.
+
+The app still needs a live Signal K connection. No offline caching or service
+worker is installed, and installing it does not grant circuit-write permission.
