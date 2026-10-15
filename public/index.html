@@ -231,7 +231,33 @@
       .mode-name > span:first-child { min-width:0; overflow-wrap:anywhere; }
       .mode-name > span:last-child { display:none; }
     }
+
+    /* Browsers without gap in flex layouts (before Chrome 84; a Navico
+       chartplotter is Chrome 69) get the same spacing from margins. */
+    .no-flexgap .brand > * + *, .no-flexgap .nav button > * + *, .no-flexgap .category-nav button > * + *, .no-flexgap .category-card > * + *, .no-flexgap .stat > * + * { margin-left:11px; }
+    .no-flexgap .section-head > * + * { margin-left:10px; }
+    .no-flexgap .status > * + *, .no-flexgap .connection > * + * { margin-left:7px; }
+    .no-flexgap .status-dot { margin-right:7px; }
+    .no-flexgap .nav-icon { margin-right:11px; }
+    .no-flexgap .control > * + * { margin-left:9px; }
+    .no-flexgap .range-wrap > * + *, .no-flexgap .mode-name > * + * { margin-left:8px; }
+    .no-flexgap .trend-custom label > * + * { margin-left:6px; }
+    .no-flexgap .tags > * { margin:0 4px 4px 0; }
+    .no-flexgap .trend-controls > *, .no-flexgap .trend-custom > * { margin:0 10px 10px 0; }
+    .no-flexgap .trend-stats > * { margin-right:28px; }
+    .no-flexgap .fullscreen-toggle, .no-flexgap button > .nav-count, .no-flexgap .section-head .search, .no-flexgap .trend-panel .section-head .trend-close { margin-left:auto; }
+    @media (max-width: 780px) { .no-flexgap .section-head .sort { margin-left:auto; } }
   </style>
+  <script>
+  (() => {
+    const d = document.createElement('div');
+    d.style.cssText = 'display:flex;flex-direction:column;gap:1px;position:absolute;visibility:hidden';
+    d.appendChild(document.createElement('div')); d.appendChild(document.createElement('div'));
+    document.documentElement.appendChild(d);
+    if (d.scrollHeight !== 1) document.documentElement.classList.add('no-flexgap');
+    d.remove();
+  })();
+  </script>
 </head>
 <body>
   <div class="app">
@@ -322,7 +348,7 @@
   const favoritesKey = 'signalk-czone-circuits:favorites';
   let favorites = new Set(JSON.parse(localStorage.getItem(favoritesKey) || '[]'));
 
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const nameKey = c => c.slug || c.name;
   const stateOf = c => c.state && c.state.state === 'ON';
   const percentOf = c => c.state && Number.isFinite(c.state.percent) ? c.state.percent : null;
@@ -404,7 +430,7 @@
     const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" role="img" tabindex="0" style="--cat:${color(x)}" title="${esc(x)}" aria-label="${esc(x)} category">${icon(x)}</span>`).join('');
     const disabled = p && p.kind === 'state';
     const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" data-circuit-slug="${esc(c.slug)}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && current ? current : (on?'ON':'OFF'))}</button>`;
-    const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct ?? 100))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
+    const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct == null ? 100 : pct))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
     const sending = p ? `<span class="sending">Sending…</span>` : '';
     return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}${askMark(c)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div>${status.trendsEnabled === true ? `<button type="button" class="arrow" title="Current trend" aria-label="Current trend for ${esc(c.name)}" onclick="openTrend('${encodeURIComponent(c.slug)}')">›</button>` : '<span class="arrow">›</span>'}</div>`;
   }

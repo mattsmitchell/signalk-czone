@@ -4,7 +4,7 @@
   const root = document.documentElement;
   const request = root.requestFullscreen || root.webkitRequestFullscreen;
   const exit = document.exitFullscreen || document.webkitExitFullscreen;
-  const enabled = document.fullscreenEnabled ?? document.webkitFullscreenEnabled;
+  const enabled = document.fullscreenEnabled != null ? document.fullscreenEnabled : document.webkitFullscreenEnabled;
   if (!button || !request || !exit || enabled === false) return;
 
   const current = () => document.fullscreenElement || document.webkitFullscreenElement;
