@@ -64,6 +64,13 @@ function fastFrames (pgnHex, sourceHex, payload, sequence = 0) {
 
 const galley = require('../lib/zcf').load(zcfSource).circuits.find(c => c.name === 'Galley Lights')
 
+// On Board references Starlink's output but does not own it. Current must
+// reach the physical circuit even when the referring circuit appears first.
+for (const frame of fastFrames('1DFF06', '29', makeDcPayload(0x14, 1, 7, 42, 0x07e8))) rawListeners.get('canboatjs:rawoutput')(frame)
+assert(deltas.some(d => d.updates[0].values.some(v => v.path === 'electrical.czone.Starlink.current' && v.value === 4.2)))
+assert(!deltas.some(d => d.updates[0].values.some(v => v.path === 'electrical.czone.On_Board.current')))
+deltas.length = 0
+
 // PGN 65284 is the authoritative circuit state. Galley Lights is encoded in
 // runtime status module 0x14, bit 1 in the ZCF status table.
 rawListeners.get('canboatjs:rawoutput')('2026-09-27T06:00:00.000Z R 18FF0429 27 99 14 1F 02 00 00 00')

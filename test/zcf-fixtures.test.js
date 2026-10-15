@@ -27,6 +27,21 @@ async function main () {
     assert(mapping.circuits.every(c => c.module === null || c.module >= 0), filename + ': circuit module value')
     assert(mapping.circuits.every(c => c.channel === null || c.channel >= 0), filename + ': channel range')
     assert(mapping.circuits.every(c => c.name.length > 0), filename + ': circuit names')
+    const expectedChanges = {
+      'SugarShack-20260927-01.zcf': ['Fresh Water Pumps -> Port Fresh Water Pump', 'On Board -> Starlink'],
+      'Meitaki-07.04.25.zcf': ['AIS Ping -> Nav. AIS']
+    }
+    const changes = new Set()
+    for (const circuit of mapping.circuits) {
+      if (circuit.module == null || circuit.channel == null || circuit.module === 0x28) continue
+      const old = mapping.circuits.find(c =>
+        Number(c.module) === circuit.module && Number(c.page) === circuit.page && Number(c.slot) === circuit.slot)
+      const current = zcf.lookup(mapping, circuit.module, circuit.page, circuit.slot,
+        circuit.module === 0xF8 ? zcf.CURRENT_PGN_AC : zcf.CURRENT_PGN_DC)
+      assert(current, filename + ': current mapping retained for ' + circuit.name)
+      if (old.name !== current.name) changes.add(old.name + ' -> ' + current.name)
+    }
+    assert.deepStrictEqual([...changes].sort(), (expectedChanges[filename] || []).sort(), filename + ': current ownership changes')
   }
 
   const testBench = await loadCanonicalFixture('TestBench.zcf')

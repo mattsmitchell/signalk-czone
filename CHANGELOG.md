@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-beta.11
+
+- Routes circuit current to known physical output owners instead of groups referencing those outputs, restoring Starlink current and correcting Port Fresh Water Pump and Meitaki Nav. AIS attribution.
+- Preserves existing current mappings when output ownership is ambiguous and adds regression coverage across all six ZCF fixtures.
+
 ## 0.3.0-beta.10
 
 - Adds opt-in circuit current trends with preset and custom chart periods, CSV storage, summaries and retention settings.

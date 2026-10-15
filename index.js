@@ -559,11 +559,8 @@ module.exports = function (app) {
     if (!mapping || !Array.isArray(mapping.circuits)) return null
     if (pgn === CURRENT_PGN_AC && Number(module) !== 0xF8) return null
     if (pgn === CURRENT_PGN_DC && Number(module) === 0x28) return null
-    return mapping.circuits.find(c =>
-      Number(c.module) === Number(module) &&
-      Number(c.page) === Number(page) &&
-      Number(c.slot) === Number(slot)
-    ) || null
+    return zcf.lookup(mapping, module, page, slot,
+      pgn === CURRENT_PGN_CONTROL_X_PLUS ? CURRENT_PGN_DC : pgn)
   }
 
   function publishSettingsRevision () {
