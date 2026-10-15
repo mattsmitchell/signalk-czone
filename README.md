@@ -195,6 +195,24 @@ Full detail is written on change (plus the last unchanged sample before a change
 - `GET /plugins/signalk-czone/trend?path=<Signal K path>&range=1h|24h|7d|31d|90d|1y`, or `&from=<ms>&to=<ms>` for a custom period. Answers `{ available, tier, start, end, gapMs, data, latest }`, where `data` rows are `[t, value]` (full detail) or `[t, avg, min, max]` (summaries, or full detail reduced to about 400 points), and `latest` is the live value while the circuit is reporting.
 - `GET /plugins/signalk-czone/trend/status` answers where trends are going, free space, and how many circuits are being recorded, or the reason trends are off.
 
+## Third-party switches
+
+Switch something that is not on the CZone network from a CZone display or keypad, with no switchbank: a Shelly, a GX relay, or any output in the Victron switch pane.
+
+1. In the CZone Configuration Tool, add a **virtual circuit** for it and put it on the display. Write the configuration and upload the new ZCF to the plugin.
+2. In the configuration panel, under **Third-party switches**, choose that circuit and link it to:
+   - **a Victron output (through the GX):** anything Venus OS lists as a switchable output: a Shelly added to the GX, the GX's own relays, a Node-RED virtual switch. Needs the plugin running on the GX (D-Bus; `dbus-native` is an optional dependency). A GX relay is offered only when its function is **Manual**; one used as an alarm relay, for a generator, a tank pump or temperature is listed greyed out with the reason and never switched. Set-points and dimmers are not offered as on/off switches.
+   - **a Shelly (directly, by IP address):** Shelly Gen2 or later, no password, through its local RPC API (`/rpc/Switch.Set`, `/rpc/Switch.GetStatus`). No GX needed. **Test** asks the Shelly for its state.
+
+The switch follows the CZone circuit, and the circuit follows the switch when it is switched from anywhere else (its app, the Victron pane, VRM); that needs **Enable CZone read/write control**. Rules, so the two never fight:
+
+- a side is acted on only when it changes, and only if the other side differs; the plugin's own change coming back is recognised;
+- **nothing is switched when the plugin starts**: if the two differ (a GX relay comes back off after a reboot), the link shows *out of step* until one side is switched;
+- a circuit set to **confirm before turning off (on)** is never turned off (on) by a link, unless other apps are allowed to; the link says why and does not retry;
+- a change one side could not take (unreachable, refused, sending disabled) is retried every 15 s; a switch that accepts a command but does not change is reported after 6 s.
+
+The switch is read every 2 s; a CZone change is acted on as its status message arrives. `GET /plugins/signalk-czone/bridge/status` shows each link; `/bridge/outputs` lists the GX's outputs; `/bridge/shelly?host=&channel=` asks a Shelly. Tested on a bench (Shelly PM1 both ways) and on a boat (GX relay 2 switched from a CZone display; the alarm relay refused).
+
 ## Installation
 
 The plugin installs the pinned `signalk-czone-zcf@0.1.0-beta.1` npm dependency automatically. No separate parser installation or Git checkout is required.
