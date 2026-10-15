@@ -426,8 +426,8 @@ The beta is intended for extended real-world testing before a stable `0.3.0` rel
 
 ## Fullscreen and tablet home-screen launch
 
-Open `/signalk-czone/` directly in your browser. The **Fullscreen** button beside
-CZone enters fullscreen; tap **Exit fullscreen** or use the browser's exit gesture
+Open `/signalk-czone/` directly in your browser. The **fullscreen icon** beside
+the CZone / Boat Systems branding enters fullscreen; tap the icon again or use the browser's exit gesture
 (or Escape on desktop) to leave. It appears only when the browser exposes the
 fullscreen API. Embedded views may need permission from their parent page.
 
@@ -437,6 +437,20 @@ Home Screen). Compatible browsers launch CZone in standalone mode without the
 usual address bar. Installation and fullscreen support vary by device/browser.
 The manifest uses relative URLs, so it follows your server's hostname and port;
 no boat IP address is hard-coded. Plain HTTP on a LAN IP may only offer a shortcut.
+
+### Set up HTTPS for a full-screen app
+
+To launch CZone from the tablet or device's home screen without the URL bar and
+browser controls, first set up trusted HTTPS on your Signal K server:
+
+1. Install and configure the **signalk-ssl** plugin.
+2. In Signal K **Server Settings**, turn on the **Use SSL** toggle and apply the settings. Restart Signal K if prompted.
+3. On each tablet or device, download the server's CA certificate (`ca.crt`). For example: [https://einstein.local:3443/signalk-ssl/ca.crt](https://einstein.local:3443/signalk-ssl/ca.crt). Replace `einstein.local` and port `3443` with your server's hostname and HTTPS port.
+4. Import/install `ca.crt` as a trusted CA certificate in the device's certificate settings. Enable trust for the certificate if the device requires a separate step.
+5. After the certificate installs successfully, you will most likely need to **reboot the tablet or device** before the browser recognises it.
+6. Open CZone over HTTPS, for example [https://einstein.local:3443/signalk-czone/](https://einstein.local:3443/signalk-czone/), and check that the browser trusts the connection. Use **Install app** / **Add to Home Screen**, then launch CZone from its new home-screen icon.
+
+Certificate installation and app installation menus vary by device and browser.
 
 The app still needs a live Signal K connection. No offline caching or service
 worker is installed, and installing it does not grant circuit-write permission.
