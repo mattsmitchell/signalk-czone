@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-beta.14
+
+- Adds bidirectional CZone links to Shelly Gen2+ switches and Victron GX outputs, with startup, confirmation and relay-function safeguards.
+- Restores Navico chartplotter compatibility with Chromium 69 syntax and flex-spacing fallbacks.
+
 ## 0.3.0-beta.13
 
 - Adds a fullscreen icon beside the CZone / Boat Systems branding, with expand/collapse states and accessible labels.
