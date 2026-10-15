@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-beta.13
+
+- Adds a fullscreen icon beside the CZone / Boat Systems branding, with expand/collapse states and accessible labels.
+- Adds standalone tablet home-screen launch assets and safe-area spacing.
+- Documents signalk-ssl setup, trusted CA certificate installation and device reboot steps for HTTPS app launch.
+
 ## 0.3.0-beta.12
 
 - Keeps the connection indicator disconnected when circuit-list REST refreshes succeed but the live WebSocket is down; shows connecting/reconnecting status and the snapshot time.
