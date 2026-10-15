@@ -1,4 +1,4 @@
-name: Publish npm beta
+name: Publish npm release
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
           node - <<'NODE'
           const p = require('./package.json')
           if (!/^\d+\.\d+\.\d+-beta\.\d+$/.test(p.version)) throw new Error('Expected a beta prerelease version')
-          if (p.publishConfig?.tag !== 'beta' || p.publishConfig?.access !== 'public') throw new Error('Expected public beta publication')
+          if (p.publishConfig?.tag !== 'latest' || p.publishConfig?.access !== 'public') throw new Error('Expected public publication on latest')
           NODE
       - name: Install dependencies without lifecycle scripts
         run: npm install --ignore-scripts
@@ -61,9 +61,9 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, 'exists=' + r.ok + '\n')
           })().catch(e => { console.error(e); process.exitCode = 1 })
           NODE
-      - name: Publish beta to npm
+      - name: Publish release to npm
         if: steps.registry.outputs.exists != 'true'
-        run: npm publish "$PACKAGE_TARBALL" --access public --tag beta --ignore-scripts
+        run: npm publish "$PACKAGE_TARBALL" --access public --tag latest --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Verify published version
@@ -85,5 +85,29 @@ jobs:
               if (attempt < 30) await new Promise(resolve => setTimeout(resolve, 10000))
             }
             throw new Error('Package is still unavailable after waiting for npm processing')
+          })().catch(e => { console.error(e); process.exitCode = 1 })
+          NODE
+      # Existing versions are immutable, but their default install tag can move.
+      - name: Set default npm release
+        run: npm dist-tag add "$(node -p "const p = require('./package.json'); p.name + '@' + p.version")" latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify default npm release
+        run: |
+          node - <<'NODE'
+          const p = require('./package.json')
+          ;(async () => {
+            const url = 'https://registry.npmjs.org/-/package/' + encodeURIComponent(p.name) + '/dist-tags'
+            for (let attempt = 1; attempt <= 30; attempt++) {
+              const r = await fetch(url, { signal: AbortSignal.timeout(30000), headers: { 'Cache-Control': 'no-cache' } })
+              if (!r.ok) throw new Error('Tag verification failed: ' + r.status)
+              const tags = await r.json()
+              if (tags.latest === p.version) {
+                console.log('Verified latest -> ' + p.version)
+                return
+              }
+              if (attempt < 30) await new Promise(resolve => setTimeout(resolve, 10000))
+            }
+            throw new Error('latest does not point to ' + p.version)
           })().catch(e => { console.error(e); process.exitCode = 1 })
           NODE

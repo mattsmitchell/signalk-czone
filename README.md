@@ -208,15 +208,15 @@ Once this beta is published and available in your App Store:
 3. Open **Server → Plugin Config → CZone** and use **Upload and install ZCF** to upload your vessel's `.zcf` configuration.
 4. Enable the plugin after configuration, then check the **Diagnostics** tab and published currents before testing controls.
 
-The plugin is disabled by default until explicitly enabled. Availability of beta versions in the App Store depends on the server version and publication channel.
+The plugin is disabled by default until explicitly enabled. Tested releases use the npm `latest` tag for default installation and Signal K App Store discovery; the version and listing retain their BETA labels.
 
-### Explicit npm beta installation
+### Explicit npm installation
 
 After npm publication, run this as the Signal K service user from the server's configuration directory (normally `~/.signalk`, or the directory configured by `SIGNALK_NODE_CONFIG_DIR`):
 
 ```bash
 cd ~/.signalk
-npm install signalk-czone@beta --omit=dev --ignore-scripts
+npm install signalk-czone@latest --omit=dev --ignore-scripts
 ```
 
 Restart Signal K and follow the configuration steps above. For Docker or appliance installations, use the corresponding container/configuration directory and restart method.
@@ -225,9 +225,9 @@ For installation from a maintainer-provided npm tarball, run `npm install /path/
 
 ### Publishing (maintainers)
 
-Publish `signalk-czone-zcf@0.1.0-beta.1` first. Then run `npm install`, `npm test`, and `npm pack --dry-run` in this repository, verify the runtime files and App Store assets, and run `npm publish --tag beta` after npm authentication.
+Publish `signalk-czone-zcf@0.1.0-beta.1` first. Then run `npm install`, `npm test`, and `npm pack --dry-run` in this repository, verify the runtime files and App Store assets, and run `npm publish --tag latest` after npm authentication.
 
-The package defaults to the `beta` tag. Promoting a beta to `latest` for default installs is a separate release decision.
+The package defaults to `latest`, including versions named `-beta.N`. The GitHub publishing workflow runs when `package.json` or the workflow changes on `main`: it tests and packs the release, publishes it if the version is new, and sets and verifies the `latest` tag. If the version already exists, the workflow promotes that existing version without republishing its contents.
 
 ### Beta feedback
 

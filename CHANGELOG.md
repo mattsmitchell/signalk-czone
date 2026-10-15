@@ -2,6 +2,8 @@
 
 ## 0.3.0-beta.11
 
+- Uses the npm `latest` tag for default installation and App Store updates while retaining the BETA version and listing labels.
+
 - Routes circuit current to known physical output owners instead of groups referencing those outputs, restoring Starlink current and correcting Port Fresh Water Pump and Meitaki Nav. AIS attribution.
 - Preserves existing current mappings when output ownership is ambiguous and adds regression coverage across all six ZCF fixtures.
 
