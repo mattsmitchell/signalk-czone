@@ -10,9 +10,10 @@
   const current = () => document.fullscreenElement || document.webkitFullscreenElement;
   const update = () => {
     const active = !!current();
-    button.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+    const label = active ? 'Exit fullscreen' : 'Show CZone fullscreen';
+    button.setAttribute('aria-label', label);
     button.setAttribute('aria-pressed', String(active));
-    button.title = active ? 'Exit fullscreen' : 'Show CZone fullscreen';
+    button.title = label;
   };
   button.hidden = false;
   update();
