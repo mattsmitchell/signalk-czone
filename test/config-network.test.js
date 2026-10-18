@@ -108,3 +108,7 @@ routes.post.get('/configuration/network/read')({}, readAgainRes)
 assert.strictEqual(readAgainRes.result.statusCode, 202)
 plugin.stop()
 console.log('CZone network configuration read/reassembly/save tests passed')
+
+// Loading a new configuration keeps every other setting (test/settings-kept.test.js;
+// run from here so the test list in package.json is unchanged).
+require('./settings-kept.test')
