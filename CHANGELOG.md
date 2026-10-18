@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-beta.15
+
+- Preserves plugin settings when uploading a ZCF or selecting a network configuration (#32).
+- Publishes switch-input states for Signal Interface, COI and Control X PLUS modules (#30).
+- Adds the Navico chartplotter touch layout, drag scrolling and reduced redraw cost (#31).
+- Updates the canonical ZCF parser to 0.1.0-beta.2 for newer Configuration Tool layouts and corrected tank settings.
+
 ## 0.3.0-beta.14
 
 - Adds bidirectional CZone links to Shelly Gen2+ switches and Victron GX outputs, with startup, confirmation and relay-function safeguards.
