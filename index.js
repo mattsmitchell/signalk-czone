@@ -3,6 +3,7 @@
 const path = require('path')
 const fs = require('fs')
 const zcf = require('./lib/zcf')
+const inputs = require('./lib/inputs')
 const czone = require('./lib/czone')
 const nmea = require('./lib/nmea2000')
 const monitoring = require('./lib/monitoring')
@@ -171,6 +172,10 @@ module.exports = function (app) {
   // Circuits nominated to confirm before switching, by circuit name.
   let confirmOff = new Set()
   let confirmOn = new Set()
+  // Switch inputs of the loaded configuration (lib/inputs) and their last
+  // decoded state, by Signal K path.
+  let switchInputs = []
+  let inputState = new Map()
 
   const configRoot = app.config && app.config.configPath
     ? path.join(app.config.configPath, 'plugin-config-data')
@@ -213,12 +218,16 @@ module.exports = function (app) {
   function loadConfiguredZcf () {
     if (!fs.existsSync(zcfPath())) {
       mapping = null
+      switchInputs = []
+      inputState = new Map()
       return null
     }
     mapping = zcf.load(zcfPath())
     mapping.commandDeviceId = selectCommandDeviceId(mapping)
     publishedCircuitValues.clear()
     monitoringRuntime = monitoring.createRuntime(mapping.meters || [])
+    switchInputs = inputs.switchInputs(mapping)
+    inputState = new Map(switchInputs.map(i => [i.path, { state: null, since: null }]))
     runtimeState = new Map(mapping.circuits.map(c => [c.name, {
       state: null,
       percent: null,
@@ -892,6 +901,25 @@ module.exports = function (app) {
     }
   }
 
+  // Switch inputs: PGN 65284 (module status) and 65308 (input message), each
+  // input read only from the message its kind of module carries it in.
+  function decodeSwitchInputs (frame) {
+    if (!switchInputs.length) return
+    const decoded = inputs.decodeFrame(frame.data)
+    if (!decoded) return
+    for (const input of switchInputs) {
+      if (input.module !== decoded.module) continue
+      const on = inputs.inputState(input.moduleKind, decoded.bitmap, input.input, frame.pgn, input.wiring)
+      if (on === undefined) continue
+      const entry = inputState.get(input.path)
+      if (entry.state === on) continue
+      entry.state = on
+      entry.since = new Date().toISOString()
+      log(`CZone INPUT: ${input.name} ${on ? 'ON' : 'OFF'} (PGN ${frame.pgn} module=0x${decoded.module.toString(16).padStart(2, '0')} bitmap=0x${decoded.bitmap.toString(16).padStart(8, '0')})`)
+      publishDelta(input.path, on)
+    }
+  }
+
   function handleRawFrame (line) {
     const frame = nmea.parseRawLine(line)
     if (!frame) return
@@ -901,7 +929,12 @@ module.exports = function (app) {
       handleConfigFastPacket(frame)
       return
     }
+    if (frame.pgn === inputs.INPUT_PGN) {
+      decodeSwitchInputs(frame)
+      return
+    }
     if (frame.pgn === 65284) {
+      decodeSwitchInputs(frame)
       decodeCzoneCircuitStatus(frame)
       return
     }
@@ -1401,6 +1434,8 @@ module.exports = function (app) {
       mapping = null
       runtimeState.clear()
       publishedCircuitValues.clear()
+      switchInputs = []
+      inputState = new Map()
       // Signal K removes PUT handlers when the plugin stops. The plugin
       // factory can be reused on a subsequent enable, so allow start() to
       // register the handlers again instead of treating the stale paths as
@@ -1409,6 +1444,22 @@ module.exports = function (app) {
     },
 
     registerWithRouter: router => {
+      router.get('/inputs', (_req, res) => {
+        res.json({
+          inputs: switchInputs.map(i => ({
+            name: i.name,
+            path: i.path,
+            module: i.module,
+            input: i.input,
+            wiring: i.wiring || null,
+            moduleType: i.decoded ? inputs.LAYOUT[i.moduleKind].name : null,
+            decoded: i.decoded,
+            state: inputState.get(i.path).state,
+            since: inputState.get(i.path).since
+          }))
+        })
+      })
+
       router.get('/status', (_req, res) => {
         res.json({
           sendingEnabled: settings.allowCzoneWrite === true,

@@ -57,6 +57,28 @@ The existing electrical-monitoring definition endpoint remains:
 GET /plugins/signalk-czone/monitoring
 ```
 
+## Switch inputs
+
+Each switch input in the ZCF (a switch, float switch or signal wired to a CZone module) is published as `electrical.czone.inputs.<input name>.state`, `true` when the input is on. The name is cleaned the same way as circuit names; a repeated name gets `2`, `3` and so on. A value is published when the plugin first hears the module and then only on change.
+
+Where an input's state is read depends on the kind of module (its type in the ZCF):
+
+| Module | Message read | Input `i` is at |
+| --- | --- | --- |
+| Signal Interface | 65284 status and 65308 input message | bit `2i+1` |
+| COI | 65308 input message only (its 65284 is its outputs) | bit `2(i-16)+1` |
+| Control X PLUS | 65284 status only | bit `i`, or `i+1` when wired to switch to negative |
+
+Inputs on other kinds of module are listed but not given a state. Checked on a Signal Interface on a test bench, COIs on SugarShack and a Control X PLUS on Compass Rose (Anchor Up, Ignition, High Bilge Water Alarm). Only one Control X PLUS input wired to negative has been seen.
+
+```text
+GET /plugins/signalk-czone/inputs
+```
+
+lists each input with its module, input number, wiring, module type, state and when it last changed.
+
+The input table needs `signalk-czone-zcf` with `signalInputs` (the newer Configuration Tool layout included).
+
 ## Design
 
 The plugin does **not** modify Signal K Server, canboatjs, n2k-signalk, or any global PGN definitions.
