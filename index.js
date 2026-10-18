@@ -13,6 +13,7 @@ const confirmOffLib = require('./lib/confirm-off')
 const { createBridge, bridgeEntries } = require('./lib/bridge')
 const { createShellyDriver } = require('./lib/bridge/shelly')
 const { createVictronDriver } = require('./lib/bridge/victron')
+const { createVictronSwitches } = require('./lib/victron/switches')
 
 const MAX_UPLOAD_BYTES = 1024 * 1024
 const CZONE_CONFIG_BLOCK_HEADER = 23
@@ -150,6 +151,44 @@ module.exports = function (app) {
       sendCircuitState(c, on)
     },
     drivers: bridgeDrivers
+  })
+  // Victron switch pane (lib/victron/switches): the CZone circuits as
+  // switches on the GX touch screen, Remote Console and VRM. Off unless
+  // ticked. A tap there switches the circuit through the same code as a
+  // Signal K PUT, so "Enable CZone read/write control" and the confirm-before
+  // rules apply; the state shown is the plugin's own decoded 65284 state.
+  const switchPane = createVictronSwitches(app, {
+    log: m => log(m),
+    version: require('./package.json').version,
+    getCurrent: skPath => {
+      const m = /^electrical\.czone\.([^.]+)\.current$/.exec(skPath || '')
+      const c = m && mapping && mapping.circuits.find(x => x.slug === m[1])
+      const st = c && runtimeState.get(c.name)
+      return st && Number.isFinite(st.current) ? st.current : null
+    },
+    controls: () => ({
+      state: (slug, on) => {
+        const c = circuitByName(slug)
+        if (on) refuseUnconfirmedOn(c)
+        else refuseUnconfirmedOff(c)
+        sendCircuitState(c, on)
+        const st = runtimeState.get(c.name)
+        if (st) st.lastRequested = on ? 'ON' : 'OFF'
+      },
+      brightness: (slug, normalized) => {
+        const c = circuitByName(slug)
+        const st = runtimeState.get(c.name)
+        if (normalized <= 0) refuseUnconfirmedOff(c)
+        else if (!st || st.state !== 'ON') refuseUnconfirmedOn(c)
+        sendCircuitBrightness(c, normalized)
+        if (st) st.lastRequestedPercent = Math.round(normalized * 100)
+      },
+      getState: slug => {
+        const c = mapping && mapping.circuits.find(x => x.slug === slug)
+        const st = c && runtimeState.get(c.name)
+        return st && st.statusObserved ? { state: st.state, percent: st.percent } : null
+      }
+    })
   })
   let monitoringRuntime = null
   // Trend recording of circuit current (see lib/trends).
@@ -1309,6 +1348,18 @@ module.exports = function (app) {
           default: false,
           description: 'Other Signal K apps switch with a PUT and cannot ask "are you sure?". Unticked, an off from them is refused with a message; the circuit can still be turned off from the webapp or a CZone keypad.'
         },
+        victronSwitches: {
+          type: 'boolean',
+          title: 'Show CZone circuits in the Victron switch pane',
+          default: false,
+          description: 'Victron GX only (Venus OS 3.60 or later). The circuits appear as switches on the GX touch screen, Remote Console and VRM, one card per CZone category. Switching there needs CZone read/write control enabled, and circuits set to confirm before turning off (on) are not turned off (on) from there unless other apps are allowed to.'
+        },
+        victronSwitchCurrent: {
+          type: 'boolean',
+          title: 'Show circuit current in the switch pane',
+          default: true,
+          description: 'Adds the current to a switch\'s label while the circuit is on, for example "Freezer (2.9 A)".'
+        },
         bridges: {
           type: 'array',
           title: 'Third-party switches',
@@ -1350,6 +1401,7 @@ module.exports = function (app) {
       })
       trends.start()
       startBridge()
+      switchPane.start(settings, mapping).catch(err => log(`Victron switch pane: ${err.message}`))
 
       const ready = (reason = 'nmea2000OutAvailable event') => {
         nmeaReady = true
@@ -1426,6 +1478,7 @@ module.exports = function (app) {
       if (trends) trends.stop()
       trends = null
       bridge.stop()
+      switchPane.stop()
       closeBridgeBus()
       reassembler = null
       configFastPacket = null
@@ -1544,6 +1597,7 @@ module.exports = function (app) {
 
       // Third-party switches: link status, the GX's outputs, a Shelly test.
       router.get('/bridge/status', (_req, res) => res.json({ links: bridge.status() }))
+      router.get('/victron/status', (_req, res) => res.json(switchPane.status()))
       router.get('/bridge/outputs', (_req, res) => {
         bridgeDrivers.victron.list()
           .then(outputs => res.json({ available: true, outputs }))
@@ -1733,5 +1787,7 @@ module.exports = function (app) {
 
   // For tests: run one bridge poll now instead of waiting for its timer.
   Object.defineProperty(plugin, '_bridgePoll', { value: () => bridge.poll(), enumerable: false })
+  // For tests: the Victron switch pane.
+  Object.defineProperty(plugin, '_switchPane', { value: switchPane, enumerable: false })
   return plugin
 }
