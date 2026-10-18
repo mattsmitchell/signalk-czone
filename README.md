@@ -442,6 +442,15 @@ Only the installed path is stored in plugin configuration; the binary ZCF is not
 
 The beta is intended for extended real-world testing before a stable `0.3.0` release.
 
+## On a Navico chartplotter (B&G, Simrad, Lowrance)
+
+A Navico plotter shows the webapp in its own browser (Chromium 69), driven by a touch screen whose touches arrive as mouse events. The page recognises the plotter from the parameters the plotter adds to the address (`mfd_name`, `mfd_model_detail`, `brand`), or from the login token left by `signalk-navico-embedder`, and switches to a touch layout. `?layout=mfd` shows it in a desktop browser for testing. Nothing changes anywhere else.
+
+- **Touch layout:** larger rows, buttons and navigation; no banner, overview or category chips; drawn icons in place of emoji and symbol characters the plotter's fonts lack; no shadows, gradients, blur or transitions, which are slow to draw there.
+- **Scrolling:** a drag scrolls the list or the left column instead of selecting text, applied once per frame, and the tap that ends a drag is not taken as a press. Redraws caused by live data wait while a finger is down.
+- **Updates:** the plotter keeps showing the page it first loaded. Once a minute the page checks whether its script has changed on the server and reloads once if so.
+- **Diagnosis:** five taps on the connection line show the last input events, the frame time and the time to redraw the list.
+
 ## Fullscreen and tablet home-screen launch
 
 Open `/signalk-czone/` directly in your browser. The **fullscreen icon** beside
