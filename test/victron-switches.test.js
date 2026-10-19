@@ -214,7 +214,8 @@ sw.start({ victronSwitches: true }, zcf, { bus }).then(async status => {
   {
     const states = { Light_2: { state: 'ON', percent: 40 }, Light_3: { state: 'OFF', percent: 0 }, Buzzer: { state: null } }
     const blind = { ...app, getSelfPath: () => undefined, streambundle: { getSelfBus: () => ({ onValue: () => () => {} }) } }
-    const sw4 = createVictronSwitches(blind, { controls: () => ({ getState: slug => states[slug] || null }), version: 'test' })
+    const offs = []
+    const sw4 = createVictronSwitches(blind, { controls: () => ({ getState: slug => states[slug] || null, state: (slug, on) => { if (!on) offs.push(slug) } }), version: 'test' })
     await sw4.start({ victronSwitches: true }, zcf, { bus })
     assert.deepStrictEqual(get('/SwitchableOutput/Light_2/State'), ['i', 1])
     assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 0])
@@ -225,6 +226,22 @@ sw.start({ victronSwitches: true }, zcf, { bus }).then(async status => {
     assert.deepStrictEqual(r4.diag.seedFound, { plugin: 2, signalk: 0 })
     assert.strictEqual(r4.diag.signalkValues, 0)
     assert.deepStrictEqual(r4.on.sort(), ['Light_2', 'Light_3'])
+    // Momentary while on, read through the plugin's state (not Signal K): an
+    // off CZone never confirms puts toggle back.
+    const realNow4 = Date.now
+    const later = ms => { Date.now = () => realNow4() + ms; sw4._resync(); Date.now = realNow4 }
+    assert.strictEqual(objects['/SwitchableOutput/Light_3/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+    assert.deepStrictEqual(offs, ['Light_3'])
+    later(1000)
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/Settings/Type'), ['i', 0])
+    later(6000)
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/Settings/Type'), ['i', 1])
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 1])
+    // …and one it does confirm leaves momentary in place.
+    assert.strictEqual(objects['/SwitchableOutput/Light_3/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+    states.Light_3 = { state: 'OFF', percent: 0 }
+    later(12000)
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/Settings/Type'), ['i', 0])
     sw4.stop()
   }
 

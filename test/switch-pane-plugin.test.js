@@ -112,6 +112,35 @@ const tap = (slug, on) => objects[`/SwitchableOutput/${slug}/State`].SetValue([[
     assert.strictEqual(objects['/SwitchableOutput/Light_2/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 1)
     assert.strictEqual(get('/SwitchableOutput/Light_2/Settings/Type'), 1)
     assert.strictEqual(p.out.length, m)
+
+    // Momentary on a circuit that is on, with the state the plugin itself
+    // decodes (the path the pane uses on a boat). The off is sent; until CZone
+    // reports it off, momentary is provisional.
+    const realNow = Date.now
+    const later = ms => { Date.now = () => realNow() + ms; p.plugin._switchPane._resync(); Date.now = realNow }
+    p.frame('1CFF0401 27 99 01 0F 01 00 00 00') // Light 1 on
+    later(6000) // past the grace of the tap above
+    assert.strictEqual(get('/SwitchableOutput/Light_1/State'), 1)
+    let k = p.out.length
+    assert.strictEqual(objects['/SwitchableOutput/Light_1/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+    assert(p.out.slice(k).some(l => /,27,99,06,00,00,/i.test(l)), 'off sent')
+    later(1000) // within the grace period: nothing undone
+    assert.strictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), 0)
+    // CZone never reports it off: toggle comes back, and the pane shows it on.
+    later(12000)
+    assert.strictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), 1)
+    assert.strictEqual(get('/SwitchableOutput/Light_1/State'), 1)
+    assert(p.paneStatus().recent.some(r => /did not confirm the off/.test(r.refused || '')))
+    // CZone does report it off: momentary stands.
+    k = p.out.length
+    assert.strictEqual(objects['/SwitchableOutput/Light_1/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+    assert(p.out.length > k)
+    p.frame('1CFF0401 27 99 01 0F 00 00 00 00') // Light 1 off
+    later(18000)
+    assert.strictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), 0)
+    assert.strictEqual(get('/SwitchableOutput/Light_1/State'), 0)
+    later(30000)
+    assert.strictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), 0)
     p.plugin.stop()
     assert.strictEqual(p.paneStatus().running, false)
   }
