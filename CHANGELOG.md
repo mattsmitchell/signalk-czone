@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-beta.16
+
+- Adds an opt-in Victron GX switch pane for CZone circuits on the GX, Remote Console and VRM (#33).
+- Preserves write-control and confirmation rules, synchronises observed state, and keeps GX names and grouping settings.
+- Resets on circuits when changing to momentary mode; refuses blocked changes and restores the previous type if CZone does not confirm OFF.
+
 ## 0.3.0-beta.15
 
 - Preserves plugin settings when uploading a ZCF or selecting a network configuration (#32).

@@ -273,7 +273,7 @@ npm install signalk-czone@latest --omit=dev --ignore-scripts
 
 Restart Signal K and follow the configuration steps above. For Docker or appliance installations, use the corresponding container/configuration directory and restart method.
 
-For installation from a maintainer-provided npm tarball, run `npm install /path/to/signalk-czone-0.3.0-beta.15.tgz --omit=dev --ignore-scripts` from the same configuration directory. Its pinned parser dependency must already be published to npm. Do not simply extract the plugin into `node_modules`: that does not install dependencies.
+For installation from a maintainer-provided npm tarball, run `npm install /path/to/signalk-czone-0.3.0-beta.16.tgz --omit=dev --ignore-scripts` from the same configuration directory. Its pinned parser dependency must already be published to npm. Do not simply extract the plugin into `node_modules`: that does not install dependencies.
 
 ### Publishing (maintainers)
 
