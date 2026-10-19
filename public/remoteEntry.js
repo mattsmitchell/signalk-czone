@@ -31,6 +31,7 @@ var signalk_czone = (function () {
     var uploadState = React.useState(null)
     var uploadFile = uploadState[0]
     var setUploadFile = uploadState[1]
+    var paneState = React.useState(null); var pane = paneState[0]; var setPane = paneState[1]
     var trendState = React.useState(null)
     var trend = trendState[0]
     var setTrend = trendState[1]
@@ -111,11 +112,26 @@ var signalk_czone = (function () {
         .catch(function () {})
     }
 
+    function loadPaneStatus () {
+      return fetch('/plugins/signalk-czone/victron/status', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null })
+        .then(function (value) { setPane(value) })
+        .catch(function () {})
+    }
+
+    function paneSummary () {
+      if (configuration.victronSwitches !== true) return 'Switched off.'
+      if (!pane) return 'Checking…'
+      if (pane.running) return pane.channels + ' circuits in the switch pane (device instance ' + pane.deviceInstance + ').'
+      return pane.error ? 'Not running: ' + pane.error : 'Starting…'
+    }
+
     React.useEffect(function () {
       loadConfiguration().catch(function (err) { setError(err.message || String(err)) })
       loadTrendStatus()
+      loadPaneStatus()
       // Saving a trend setting restarts the plugin; show where trends go now.
-      var timer = setInterval(loadTrendStatus, 5000)
+      var timer = setInterval(function () { loadTrendStatus(); loadPaneStatus() }, 5000)
       return function () { clearInterval(timer) }
     }, [])
 
@@ -445,6 +461,24 @@ var signalk_czone = (function () {
         React.createElement('div', { style: { marginTop: 8 } },
           React.createElement('button', { type: 'button', disabled: busy || !bridgeCircuit || (bridgeKind === 'victron' ? !bridgeOutput : !bridgeHost.trim()), onClick: addBridge }, 'Link')
         )
+      ),
+
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'Victron switch pane'),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Victron GX only (Venus OS 3.60 or later). The CZone circuits as switches on the GX touch screen, Remote Console and VRM, one card per CZone category. Switching there needs CZone read/write control enabled; circuits set to confirm before turning off (on) are not turned off (on) from there unless other apps are allowed to.'),
+        React.createElement('div', { style: { marginTop: 9 } },
+          React.createElement('label', null,
+            React.createElement('input', { type: 'checkbox', checked: configuration.victronSwitches === true, disabled: busy, onChange: function (e) { persist({ victronSwitches: e.target.checked }) } }),
+            ' Show CZone circuits in the Victron switch pane'
+          )
+        ),
+        React.createElement('div', { style: { marginTop: 6 } },
+          React.createElement('label', null,
+            React.createElement('input', { type: 'checkbox', checked: configuration.victronSwitchCurrent !== false, disabled: busy || configuration.victronSwitches !== true, onChange: function (e) { persist({ victronSwitchCurrent: e.target.checked }) } }),
+            ' Show circuit current in the label while on'
+          )
+        ),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, paneSummary())
       ),
 
       React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },

@@ -1,0 +1,297 @@
+'use strict'
+
+// Venus OS switch pane bridge, against an in-memory D-Bus (no daemon needed).
+const assert = require('assert')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+const { createVictronSwitches, groupFor } = require('../lib/victron/switches')
+
+// One card per circuit: its sub-category; with several, a fixed priority; with
+// none, DC / AC.
+assert.strictEqual(groupFor({ masterCategory: 'DC', subCategories: ['Refrigeration'] }), 'Refrigeration')
+assert.strictEqual(groupFor({ masterCategory: 'DC', subCategories: ['Lighting', 'Navigation'] }), 'Navigation')
+assert.strictEqual(groupFor({ masterCategory: 'DC', subCategories: ['Entertainment', 'Lighting'] }), 'Lighting')
+assert.strictEqual(groupFor({ masterCategory: 'DC', subCategories: ['Something New'] }), 'Something New')
+assert.strictEqual(groupFor({ masterCategory: 'AC', subCategories: [] }), 'AC')
+// The plugin's own circuit shape (categories: master, sub, userDefined).
+assert.strictEqual(groupFor({ categories: { master: ['DC'], sub: ['House/Habitat', 'Vessel Management', 'Pumps'], userDefined: [] } }), 'Pumps')
+assert.strictEqual(groupFor({ categories: { master: ['DC'], sub: [], userDefined: ['Winches'] } }), 'Winches')
+assert.strictEqual(groupFor({ categories: { master: ['AC'], sub: [], userDefined: [] } }), 'AC')
+
+const objects = {}
+const signals = []
+const bus = {
+  exportInterface: (obj, p, iface) => { objects[p] = obj },
+  requestName: (name, flags, cb) => cb(null, 1),
+  sendSignal: (p, iface, member, sig, body) => signals.push({ p, member, body }),
+  invoke: (msg, cb) => cb(new Error('no localsettings'))
+}
+const puts = []
+const sk = { 'electrical.czone.Light_2.switch.state': { value: true } }
+let deltaListener = null
+const app = {
+  getDataDirPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'vsw-')),
+  putSelfPath: (p, v, cb) => { puts.push([p, v]); if (cb) cb({ state: 'COMPLETED', statusCode: 200 }) },
+  getSelfPath: p => sk[p],
+  streambundle: { getSelfBus: () => ({ onValue: fn => { deltaListener = fn; return () => {} } }) }
+}
+const zcf = path.join(__dirname, 'fixtures', 'TestBench.zcf')
+let hostControls = null
+const calls = []
+const sw = createVictronSwitches(app, { controls: () => hostControls, getCurrent: p => (p === 'electrical.czone.Light_2.current' ? 1.5 : null), version: 'test' })
+
+sw.start({ victronSwitches: true }, zcf, { bus }).then(async status => {
+  assert.strictEqual(status.running, true)
+  assert.strictEqual(status.channels, 6)
+  const get = p => objects[p].GetValue()
+  // Root device identity
+  assert.deepStrictEqual(get('/State'), ['i', 0x100])
+  assert.deepStrictEqual(get('/DeviceInstance'), ['i', 100])
+  // One channel per circuit, grouped by CZone category
+  // Name is "CZone" for every switch (Venus OS lists "Name: CustomName"), not the circuit name again.
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Name'), ['s', 'CZone'])
+  assert.deepStrictEqual(get('/SwitchableOutput/Buzzer/Name'), ['s', 'CZone'])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Settings/CustomName'), ['s', 'Light 1'])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Settings/Group'), ['s', 'Lighting'])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), ['i', 1])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Settings/ValidTypes'), ['i', 0b011])
+  // Seeded from Signal K, plus the circuit current
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_2/State'), ['i', 1])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_2/Status'), ['i', 0x09])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_2/Current'), ['d', 1.5])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Current'), ['ai', []])
+  // Pane -> CZone without host controls: Signal K PUT on the plugin's own path
+  assert.strictEqual(objects['/SwitchableOutput/Light_3/State'].SetValue([[{ type: 'i' }], [1]]), 0)
+  assert.deepStrictEqual(puts, [['electrical.czone.Light_3.switch.state', true]])
+  // With host controls (as index.js provides): called directly; a refusal
+  // (e.g. sending disabled) is returned to the pane as an error.
+  hostControls = { state: (slug, on) => { calls.push([slug, on]); if (slug === 'Light_4') throw new Error('NMEA 2000 sending is disabled') } }
+  assert.strictEqual(objects['/SwitchableOutput/Light_1/State'].SetValue([[{ type: 'i' }], [1]]), 0)
+  assert.deepStrictEqual(calls, [['Light_1', true]])
+  assert.strictEqual(objects['/SwitchableOutput/Light_4/State'].SetValue([[{ type: 'i' }], [1]]), 1)
+  assert.match(sw.status().recent[0].result, /sending is disabled/)
+  // Invalid type for a non-dimmer is refused; momentary is allowed
+  assert.strictEqual(objects['/SwitchableOutput/Light_3/Settings/Type'].SetValue([[{ type: 'i' }], [2]]), 1)
+  // Momentary resets the output (Victron's switch API): Light 3 is on from the
+  // tap above, so choosing momentary sends it off first.
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 1])
+  assert.strictEqual(objects['/SwitchableOutput/Light_3/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+  assert.deepStrictEqual(calls[calls.length - 1], ['Light_3', false])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 0])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_3/Settings/Type'), ['i', 0])
+  // An output that cannot be turned off (here: refused by the host, as for
+  // sending disabled or confirm before off) keeps its type, and stays on.
+  objects['/SwitchableOutput/Light_4/State'].SetValue([[{ type: 'i' }], [1]]) // refused: still off
+  sk['electrical.czone.Light_4.switch.state'] = { value: true }
+  deltaListener({ path: 'electrical.czone.Light_4.switch.state', value: true })
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_4/State'), ['i', 1])
+  assert.strictEqual(objects['/SwitchableOutput/Light_4/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 1)
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_4/Settings/Type'), ['i', 1])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_4/State'), ['i', 1])
+  // Momentary from off: nothing is switched.
+  const callsBefore = calls.length
+  assert.strictEqual(objects['/SwitchableOutput/Light_5/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+  assert.strictEqual(calls.length, callsBefore)
+  objects['/SwitchableOutput/Light_5/Settings/Type'].SetValue([[{ type: 'i' }], [1]])
+  sk['electrical.czone.Light_4.switch.state'] = { value: false }
+  deltaListener({ path: 'electrical.czone.Light_4.switch.state', value: false })
+  // Current shown in the label while on (Light 2 is on at 1.5 A)
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_2/Settings/CustomName'), ['s', 'Light 2 (1.5 A)'])
+  // A rename from the GUI keeps the name, not the amps
+  objects['/SwitchableOutput/Light_2/Settings/CustomName'].SetValue([[{ type: 's' }], ['Saloon (1.5 A)']])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_2/Settings/CustomName'), ['s', 'Saloon (1.5 A)'])
+  sk['electrical.czone.Light_2.switch.state'] = { value: false }
+  deltaListener({ path: 'electrical.czone.Light_2.switch.state', value: false })
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_2/Settings/CustomName'), ['s', 'Saloon'])
+  // CZone -> pane: a state delta updates State and Status and signals it
+  sk['electrical.czone.Light_1.switch.state'] = { value: true }
+  deltaListener({ path: 'electrical.czone.Light_1.switch.state', value: true })
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/State'), ['i', 1])
+  assert(signals.some(s => s.p === '/SwitchableOutput/Light_1/State' && s.member === 'PropertiesChanged'))
+  // GetItems lists every path with Value and Text
+  const items = objects['/'].GetItems()
+  assert(items.length > 60)
+  assert(items.every(([p, kv]) => p.startsWith('/') && kv[0][0] === 'Value' && kv[1][0] === 'Text'))
+  // A circuit that was already on before this service was listening (Compass
+  // Rose, Anchor Light): no delta ever comes, the regular re-sync picks it up.
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_5/State'), ['i', 0])
+  sk['electrical.czone.Light_5.switch.state'] = { value: true }
+  sw._resync()
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_5/State'), ['i', 1])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_5/Status'), ['i', 0x09])
+  // A pane tap is not undone by the re-sync while CZone has yet to confirm…
+  sk['electrical.czone.Light_3.switch.state'] = { value: false }
+  assert.strictEqual(objects['/SwitchableOutput/Light_3/State'].SetValue([[{ type: 'i' }], [1]]), 0)
+  sw._resync()
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 1])
+  // …but a command CZone never acted on snaps back after the grace period.
+  const realNow = Date.now
+  Date.now = () => realNow() + 6000
+  sw._resync()
+  Date.now = realNow
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 0])
+  // Momentary chosen while on is provisional until CZone reports the off.
+  // Confirmed: it stands.
+  objects['/SwitchableOutput/Light_1/Settings/Type'].SetValue([[{ type: 'i' }], [1]])
+  sk['electrical.czone.Light_1.switch.state'] = { value: true }
+  sw._resync()
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/State'), ['i', 1])
+  assert.strictEqual(objects['/SwitchableOutput/Light_1/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+  sk['electrical.czone.Light_1.switch.state'] = { value: false }
+  deltaListener({ path: 'electrical.czone.Light_1.switch.state', value: false })
+  Date.now = () => realNow() + 6000
+  sw._resync()
+  Date.now = realNow
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), ['i', 0])
+  objects['/SwitchableOutput/Light_1/Settings/Type'].SetValue([[{ type: 'i' }], [1]])
+  // Never confirmed (the circuit stays on): the type goes back to toggle
+  // after the grace period, and the pane shows it on.
+  sk['electrical.czone.Light_1.switch.state'] = { value: true }
+  Date.now = () => realNow() + 6000 // past the grace of the step above
+  sw._resync()
+  Date.now = realNow
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/State'), ['i', 1])
+  assert.strictEqual(objects['/SwitchableOutput/Light_1/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+  sw._resync() // within the grace period: nothing undone yet
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), ['i', 0])
+  Date.now = () => realNow() + 6000
+  sw._resync()
+  Date.now = realNow
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), ['i', 1])
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/State'), ['i', 1])
+  assert(sw.status().recent.some(r => /did not confirm the off/.test(r.refused || '')))
+  sw._resync() // settled: stays toggle
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_1/Settings/Type'), ['i', 1])
+  // States are repeated to the GX even when nothing changed, so a listener
+  // holding a stale value (snapshot taken while the service was starting) recovers.
+  await new Promise(resolve => setTimeout(resolve, 80)) // let earlier changes flush
+  const before = signals.length
+  sw._announce()
+  await new Promise(resolve => setTimeout(resolve, 80))
+  const repeated = signals.slice(before)
+  assert.strictEqual(repeated.length, 1)
+  assert.deepStrictEqual([repeated[0].p, repeated[0].member], ['/', 'ItemsChanged'])
+  const sent = Object.fromEntries(repeated[0].body[0].map(([p, kv]) => [p, kv[0][1][1]]))
+  assert.strictEqual(sent['/SwitchableOutput/Light_5/State'], 1)
+  assert.strictEqual(sent['/SwitchableOutput/Light_4/State'], 0)
+  assert('/SwitchableOutput/Light_1/Settings/CustomName' in sent)
+  // The GX orders switches alphabetically by label: the amps must not move one.
+  {
+    const off = ['Freezer', 'Freezer Temp Control', 'Freezer Temp Set-point', 'Fridge', 'Fridge Temp Control']
+    const on = ['Freezer (3.0 A)', 'Freezer Temp Control (0.1 A)', 'Freezer Temp Set-point', 'Fridge (2.4 A)', 'Fridge Temp Control']
+    for (const cmp of [(a, b) => (a < b ? -1 : a > b ? 1 : 0), (a, b) => a.localeCompare(b), (a, b) => a.toLowerCase().localeCompare(b.toLowerCase())]) {
+      assert.deepStrictEqual([...off].reverse().sort(cmp), off)
+      assert.deepStrictEqual([...on].reverse().sort(cmp), on)
+    }
+    // A rename typed on the GX with either form of suffix keeps the name only.
+    objects['/SwitchableOutput/Light_2/Settings/CustomName'].SetValue([[{ type: 's' }], ['Saloon · 1.5 A']])
+    assert(/^Saloon( \(1\.5 A\))?$/.test(get('/SwitchableOutput/Light_2/Settings/CustomName')[1]))
+  }
+
+  // /victron/status: which circuits the pane has as on, and any that differ
+  // from Signal K (none here), plus whether the resync is running.
+  const rep = sw.status()
+  assert(rep.on.includes('Light_5') && !rep.on.includes('Light_4'))
+  assert(rep.diag.seedRuns > 0 && rep.diag.seedErrors === 0 && rep.diag.liveChannels === 6)
+  sk['electrical.czone.Light_4.switch.state'] = { value: true } // Signal K on, pane not yet told
+  assert.deepStrictEqual(sw.status().mismatch, [{ circuit: 'Light_4', plugin: null, signalk: 1, pane: 0 }])
+  sw._resync()
+  assert.deepStrictEqual(sw.status().mismatch, [])
+  // One circuit's value blowing up must not stop the others being updated.
+  const realGet = app.getSelfPath
+  sk['electrical.czone.Light_4.switch.state'] = { value: false }
+  app.getSelfPath = p => { if (p.includes('Buzzer.')) throw new Error('boom'); return realGet(p) }
+  sw._resync()
+  app.getSelfPath = realGet
+  assert.deepStrictEqual(get('/SwitchableOutput/Light_4/State'), ['i', 0])
+  assert(sw.status().diag.seedErrors > 0 && /Buzzer: boom/.test(sw.status().diag.lastError))
+  sw.stop()
+
+  // The pane takes circuit state from the host plugin's own decoded state (what
+  // the webapp shows), so it is right even when nothing can be read back from
+  // Signal K and the first status frames came before the pane was listening.
+  {
+    const states = { Light_2: { state: 'ON', percent: 40 }, Light_3: { state: 'OFF', percent: 0 }, Buzzer: { state: null } }
+    const blind = { ...app, getSelfPath: () => undefined, streambundle: { getSelfBus: () => ({ onValue: () => () => {} }) } }
+    const offs = []
+    const sw4 = createVictronSwitches(blind, { controls: () => ({ getState: slug => states[slug] || null, state: (slug, on) => { if (!on) offs.push(slug) } }), version: 'test' })
+    await sw4.start({ victronSwitches: true }, zcf, { bus })
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_2/State'), ['i', 1])
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 0])
+    states.Light_3 = { state: 'ON', percent: 100 }
+    sw4._resync()
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 1])
+    const r4 = sw4.status()
+    assert.deepStrictEqual(r4.diag.seedFound, { plugin: 2, signalk: 0 })
+    assert.strictEqual(r4.diag.signalkValues, 0)
+    assert.deepStrictEqual(r4.on.sort(), ['Light_2', 'Light_3'])
+    // Momentary while on, read through the plugin's state (not Signal K): an
+    // off CZone never confirms puts toggle back.
+    const realNow4 = Date.now
+    const later = ms => { Date.now = () => realNow4() + ms; sw4._resync(); Date.now = realNow4 }
+    assert.strictEqual(objects['/SwitchableOutput/Light_3/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+    assert.deepStrictEqual(offs, ['Light_3'])
+    later(1000)
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/Settings/Type'), ['i', 0])
+    later(6000)
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/Settings/Type'), ['i', 1])
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/State'), ['i', 1])
+    // …and one it does confirm leaves momentary in place.
+    assert.strictEqual(objects['/SwitchableOutput/Light_3/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 0)
+    states.Light_3 = { state: 'OFF', percent: 0 }
+    later(12000)
+    assert.deepStrictEqual(get('/SwitchableOutput/Light_3/Settings/Type'), ['i', 0])
+    sw4.stop()
+  }
+
+  // Given the loaded configuration: the circuits the webapp lists, not hidden
+  // ones or those no CZone display shows.
+  {
+    const mapping = { vesselName: 'Boat', circuits: [
+      { name: 'Shown', slug: 'Shown', capabilities: {}, categories: { master: ['DC'], sub: ['Lighting'] } },
+      { name: 'Not Listed', slug: 'Not_Listed', capabilities: {}, showInCircuitList: false },
+      { name: 'Hidden', slug: 'Hidden', capabilities: {}, hidden: true }
+    ] }
+    for (const k of Object.keys(objects)) delete objects[k]
+    const sw5 = createVictronSwitches(app, { version: 'test' })
+    const st = await sw5.start({ victronSwitches: true }, mapping, { bus })
+    assert.strictEqual(st.channels, 1)
+    assert(objects['/SwitchableOutput/Shown/State'] && !objects['/SwitchableOutput/Not_Listed/State'] && !objects['/SwitchableOutput/Hidden/State'])
+    sw5.stop()
+  }
+
+  // A start overtaken by stop() does not carry on and leave a second service.
+  {
+    const before = Object.keys(objects).length
+    for (const k of Object.keys(objects)) delete objects[k]
+    const sw3 = createVictronSwitches(app, { version: 'test' })
+    const pending = sw3.start({ victronSwitches: true }, zcf, { bus })
+    sw3.stop()
+    const st = await pending
+    assert.strictEqual(st.running, false)
+    assert.strictEqual(Object.keys(objects).length, 0)
+    assert(before > 0)
+  }
+
+  // Device name: defaults to the vessel name in the ZCF; a name typed on the
+  // GX is accepted, kept across restarts, and clearing it restores the default.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vsw-name-'))
+  const app2 = { ...app, getDataDirPath: () => dir }
+  const name = () => objects['/CustomName'].GetValue()
+  let sw2 = createVictronSwitches(app2, { version: 'test' })
+  await sw2.start({ victronSwitches: true }, zcf, { bus })
+  assert.deepStrictEqual(name(), ['s', 'CZone Test Bench'])
+  assert.strictEqual(objects['/CustomName'].SetValue([[{ type: 's' }], ['CZone']]), 0)
+  assert.deepStrictEqual(name(), ['s', 'CZone'])
+  sw2.stop()
+  sw2 = createVictronSwitches(app2, { version: 'test' })
+  await sw2.start({ victronSwitches: true }, zcf, { bus })
+  assert.deepStrictEqual(name(), ['s', 'CZone'])
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'victron-switches.json'), 'utf8')).deviceName, 'CZone')
+  assert.strictEqual(objects['/CustomName'].SetValue([[{ type: 's' }], ['']]), 0)
+  assert.deepStrictEqual(name(), ['s', 'CZone Test Bench'])
+  sw2.stop()
+  console.log('Victron switch pane tests passed')
+}).catch(err => { console.error(err); process.exit(1) })
+

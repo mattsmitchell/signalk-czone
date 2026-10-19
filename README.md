@@ -235,6 +235,18 @@ The switch follows the CZone circuit, and the circuit follows the switch when it
 
 The switch is read every 2 s; a CZone change is acted on as its status message arrives. `GET /plugins/signalk-czone/bridge/status` shows each link; `/bridge/outputs` lists the GX's outputs; `/bridge/shelly?host=&channel=` asks a Shelly. Tested on a bench (Shelly PM1 both ways) and on a boat (GX relay 2 switched from a CZone display; the alarm relay refused).
 
+## Victron switch pane
+
+On a Victron GX (Venus OS 3.60 or later), tick **Show CZone circuits in the Victron switch pane** in the configuration panel and the circuits appear as switches on the GX touch screen, Remote Console and VRM. The plugin registers `com.victronenergy.switch.czone` on the GX's D-Bus, following Victron's switchable-output API.
+
+- **Which circuits:** those the webapp lists, one card per CZone category (the first sub-category, in a fixed priority, when there are several; DC or AC when there are none). A circuit linked to a third-party switch is left out, since that switch is already in the pane.
+- **Both ways:** a tap in the pane switches the circuit with the same code as a Signal K PUT, so it needs **Enable CZone read/write control**, and a circuit set to confirm before turning off (on) is not turned off (on) from the pane unless other apps are allowed to; the pane's switch goes back. A change made anywhere else shows in the pane, from the plugin's own decoded 65284 state, checked every two seconds.
+- **Label:** the circuit name, plus the current while it is on ("Freezer (2.9 A)"; untick **Show circuit current** to leave it off). A reading that only wobbles does not change the label, since every rename makes the GX re-sort its lists. Names, groups, types and the device's name can be edited on the GX and are kept (`victron-switches.json` in the plugin's data folder).
+- **Device list:** Settings > Devices lists each switch as "CZone: name".
+- `GET /plugins/signalk-czone/victron/status` reports whether it is running, which circuits the pane has as on, any that disagree with the plugin, and the last few requests from the pane.
+
+Off a GX, or without `dbus-native` (an optional dependency), it reports that D-Bus is not available and the rest of the plugin is unaffected.
+
 ## Installation
 
 The plugin installs the pinned `signalk-czone-zcf@0.1.0-beta.2` npm dependency automatically. No separate parser installation or Git checkout is required.
