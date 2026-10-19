@@ -105,6 +105,13 @@ const tap = (slug, on) => objects[`/SwitchableOutput/${slug}/State`].SetValue([[
     assert.match(p.paneStatus().recent[0].result, /confirm before turning off/)
     assert.strictEqual(tap('Light_2', true), 0)
     assert(p.out.length > n)
+    // Choosing momentary would reset (turn off) the output: refused for a
+    // circuit that asks before turning off, and nothing is sent.
+    const m = p.out.length
+    assert.strictEqual(get('/SwitchableOutput/Light_2/State'), 1)
+    assert.strictEqual(objects['/SwitchableOutput/Light_2/Settings/Type'].SetValue([[{ type: 'i' }], [0]]), 1)
+    assert.strictEqual(get('/SwitchableOutput/Light_2/Settings/Type'), 1)
+    assert.strictEqual(p.out.length, m)
     p.plugin.stop()
     assert.strictEqual(p.paneStatus().running, false)
   }
