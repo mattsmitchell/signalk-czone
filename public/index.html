@@ -353,7 +353,7 @@
       <div class="connection" id="connection"><i></i><span>Connecting to Signal K…</span></div>
       <section class="hero">
         <h1 id="heroTitle">Your Boat, Your Circuits</h1>
-        <p>Monitor and control your boat's electrical systems.</p><div id="writeGate" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid rgba(255,195,77,.35);border-radius:10px;background:rgba(255,195,77,.08);color:#ffd98a;font-size:12px;line-height:1.5"></div>
+        <p>Monitor and control your boat's electrical systems.</p><div id="loadError" role="alert" hidden style="position:relative;z-index:1;margin-top:12px;padding:12px;border:1px solid var(--amber);border-radius:10px;background:var(--panel);line-height:1.5"></div><div id="writeGate" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid rgba(255,195,77,.35);border-radius:10px;background:rgba(255,195,77,.08);color:#ffd98a;font-size:12px;line-height:1.5"></div>
       </section>
       <section class="section trend-panel" id="trendPanel">
         <div class="section-head"><span>📈</span><div><h2 id="trendTitle"></h2><span class="subtle" id="trendSub"></span></div><button type="button" class="sort trend-close" onclick="closeTrend()" aria-label="Close trend">✕ Close</button></div>
@@ -700,10 +700,45 @@
     if (Array.isArray(data.modes)) modes = data.modes;
     if (data.activeMode) activeMode = data.activeMode;
   }
+  function showLoadError(message, signIn) {
+    const el = document.querySelector('#loadError');
+    el.textContent = message + ' ';
+    const link = document.createElement('a');
+    link.style.color = 'var(--cyan)';
+    if (signIn) {
+      const here = window.location.pathname + window.location.search + window.location.hash;
+      link.href = '/admin/#/login?redirect=' + encodeURIComponent(here);
+      link.textContent = 'Sign in';
+    } else {
+      link.href = window.location.href;
+      link.textContent = 'Retry';
+      link.onclick = event => { event.preventDefault(); window.location.reload(); };
+    }
+    el.appendChild(link);
+    el.hidden = false;
+  }
+
+  async function showCircuitRequestError(response) {
+    let signIn = response.status === 401;
+    if (response.status === 403) {
+      try {
+        const r = await fetch('/skServer/loginStatus', { cache:'no-store', credentials:'include' });
+        if (r.ok) signIn = (await r.json()).status === 'notLoggedIn';
+      } catch (_) { /* Keep the permission error if login status cannot be checked. */ }
+    }
+    const message = signIn
+      ? 'Sign in to Signal K to load CZone circuits.'
+      : response.status === 403
+        ? 'Signal K denied access to CZone circuits. Your account may not have the required permissions.'
+        : 'Could not load CZone circuits (HTTP ' + response.status + '). Check the Signal K server and CZone plugin.';
+    showLoadError(message, signIn);
+    updateSocketIndicator(signIn ? 'Sign in required' : 'Unable to load CZone circuits', false);
+  }
+
   async function refreshOnce(reason = 'manual') {
     try {
       const r = await fetch(`${API}/circuits`, { cache:'no-store', credentials:'include' });
-      if (!r.ok) throw new Error('Signal K plugin unavailable (HTTP ' + r.status + ')');
+      if (!r.ok) { await showCircuitRequestError(r); return false; }
       const data = await r.json();
       const incoming = Array.isArray(data.circuits) ? data.circuits : [];
       console.debug('[CZone UI] REST refresh', reason, { circuits: incoming.length, modes: Array.isArray(data.modes) ? data.modes.length : 0, sendingEnabled: data.sendingEnabled === true, nmeaReady: data.nmeaReady === true });
@@ -719,12 +754,14 @@
         : socketEverOpen
           ? `<i></i><span>Live updates lost · reconnecting… (circuits as of ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })})</span>`
           : '<i></i><span>Circuits loaded · connecting live updates…</span>';
+      document.querySelector('#loadError').hidden = true;
       render();
       return true;
     } catch (e) {
       console.warn('[CZone UI] REST refresh failed', reason, e);
       document.querySelector('#connection').classList.remove('ok');
-      document.querySelector('#connection').innerHTML = '<i></i><span>Waiting for Signal K…</span>';
+      showLoadError('Could not load CZone circuits. Check the Signal K connection and CZone plugin. ' + e.message, false);
+      updateSocketIndicator('Unable to load CZone circuits', false);
       return false;
     }
   }
@@ -1334,7 +1371,8 @@
   }
 
   refreshVesselName();
-  refreshOnce('initial-load').then(() => {
+  refreshOnce('initial-load').then(loaded => {
+    if (!loaded) return;
     if (circuits.length) {
       connectSocket();
       sendSubscriptions();

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-beta.17
+
+- Prompts for Signal K login when CZone circuit requests are unauthorized, returning to the webapp after sign-in (#34).
+- Shows permission and circuit-loading errors with a retry option instead of waiting indefinitely for Signal K.
+
 ## 0.3.0-beta.16
 
 - Adds an opt-in Victron GX switch pane for CZone circuits on the GX, Remote Console and VRM (#33).
