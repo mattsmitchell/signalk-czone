@@ -75,6 +75,12 @@
     .hero h1, .hero p { position:relative; z-index:1; }
     .hero h1 { margin:0; font-size:30px; line-height:1.15; letter-spacing:-.7px; }
     .hero p { margin:9px 0 0; color:#a9c2d9; font-size:14px; }
+    .login-form { display:grid; gap:8px; max-width:280px; margin:10px 0; }
+    .login-form input { padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.05); color:var(--text); font-size:16px; }
+    .login-form button { padding:10px 12px; border-radius:10px; border:0; background:linear-gradient(135deg,#168eea,#2164b8); color:#fff; font-weight:700; font-size:15px; cursor:pointer; }
+    .login-form button:disabled { opacity:.6; cursor:default; }
+    .login-form .login-error { color:#ff8a9a; font-size:13px; }
+    .login-form .login-error:empty { display:none; }
     .search { position:relative; }
     .search input { width:100%; border:1px solid var(--line); background:#0b1d30; color:white; border-radius:999px; padding:11px 15px 11px 38px; outline:none; }
     .search input:focus { border-color:rgba(56,169,255,.65); box-shadow:0 0 0 3px rgba(56,169,255,.10); }
@@ -702,13 +708,17 @@
   }
   function showLoadError(message, signIn) {
     const el = document.querySelector('#loadError');
+    // Keep a sign-in form that is already showing: someone may be typing in it.
+    if (signIn && !el.hidden && el.loginForm) return;
+    el.loginForm = null;
     el.textContent = message + ' ';
+    if (signIn) el.appendChild(loginForm(el));
     const link = document.createElement('a');
     link.style.color = 'var(--cyan)';
     if (signIn) {
       const here = window.location.pathname + window.location.search + window.location.hash;
       link.href = '/admin/#/login?redirect=' + encodeURIComponent(here);
-      link.textContent = 'Sign in';
+      link.textContent = 'Or sign in on the Signal K login page';
     } else {
       link.href = window.location.href;
       link.textContent = 'Retry';
@@ -716,6 +726,46 @@
     }
     el.appendChild(link);
     el.hidden = false;
+  }
+
+  // Sign in on the page itself. A home-screen app (iPad, Android) keeps its
+  // own login, separate from the browser's, and has no address bar; the link
+  // to the admin page stays as the alternative. "Remember me" keeps the login
+  // after the app is closed, for as long as Signal K's token lasts.
+  function loginForm(banner) {
+    const form = document.createElement('form');
+    form.className = 'login-form';
+    const field = (name, type, autocomplete, placeholder) => {
+      const input = document.createElement('input');
+      input.name = name; input.type = type; input.required = true;
+      input.autocomplete = autocomplete; input.placeholder = placeholder;
+      form.appendChild(input);
+      return input;
+    };
+    const user = field('username', 'text', 'username', 'Signal K user');
+    const pass = field('password', 'password', 'current-password', 'Password');
+    const button = document.createElement('button');
+    button.type = 'submit'; button.textContent = 'Log in';
+    form.appendChild(button);
+    const error = document.createElement('span');
+    error.className = 'login-error';
+    form.appendChild(error);
+    form.onsubmit = async event => {
+      event.preventDefault();
+      error.textContent = '';
+      button.disabled = true;
+      try {
+        const r = await fetch('/signalk/v1/auth/login', { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ username: user.value, password: pass.value, rememberMe: true }) });
+        if (r.ok) { window.location.reload(); return; }
+        error.textContent = r.status === 401 ? 'Wrong user name or password.' : 'Signal K refused the login (HTTP ' + r.status + ').';
+      } catch (_) {
+        error.textContent = 'Signal K could not be reached.';
+      }
+      button.disabled = false;
+    };
+    banner.loginForm = form;
+    return form;
   }
 
   async function showCircuitRequestError(response) {
@@ -732,7 +782,8 @@
         ? 'Signal K denied access to CZone circuits. Your account may not have the required permissions.'
         : 'Could not load CZone circuits (HTTP ' + response.status + '). Check the Signal K server and CZone plugin.';
     showLoadError(message, signIn);
-    updateSocketIndicator(signIn ? 'Sign in required' : 'Unable to load CZone circuits', false);
+    // The plotter hides the banner, and its login is the Navico embedder's token.
+    updateSocketIndicator(signIn ? (MFD ? 'Sign in required: set the token in the Navico embedder' : 'Sign in required') : 'Unable to load CZone circuits', false);
   }
 
   async function refreshOnce(reason = 'manual') {
