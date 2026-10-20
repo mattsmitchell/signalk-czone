@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-beta.18
+
+- Adds in-page Signal K sign-in for browser and installed home-screen apps, without leaving CZone (#35, thanks @superstar76).
+- Remembers login across app restarts, preserves the form during refreshes, and shows clear login errors with the Admin UI login retained as a fallback.
+
 ## 0.3.0-beta.17
 
 - Prompts for Signal K login when CZone circuit requests are unauthorized, returning to the webapp after sign-in (#34).
