@@ -189,9 +189,25 @@
     /* Trends: the arrow at the end of a row is a button that opens the circuit's current over time. */
     button.arrow { line-height:1; border:0; background:transparent; cursor:pointer; padding:6px 4px; border-radius:8px; }
     .arrow:hover, .arrow:focus-visible { color:#cfe6ff; background:rgba(55,143,215,.12); }
-    .trend-panel { display:none; margin:12px 0; }
-    .trend-panel.show { display:block; }
-    .trend-panel .section-head .trend-close { margin-left:auto; cursor:pointer; }
+    /* A trend opens as a window in the middle of the page, so the page under
+       it stays where it was. No min()/max(): the plotter's Chromium 69. */
+    .trend-panel { display:none; margin:0; }
+    .trend-panel.show { display:block; position:fixed; z-index:61; margin:0; left:50%; top:50%; transform:translate(-50%,-50%); width:920px; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow:auto; background:var(--panel); box-shadow:0 24px 60px rgba(0,0,0,.6); }
+    .trend-panel.show.full { left:0; top:0; right:0; bottom:0; transform:none; width:auto; max-width:none; max-height:none; border-radius:0; }
+    .trend-panel.full .trend-chart canvas { height:calc(100vh - 240px); min-height:240px; }
+    .trend-backdrop { display:none; position:fixed; z-index:60; left:0; top:0; right:0; bottom:0; background:rgba(2,10,20,.72); }
+    .trend-backdrop.show { display:block; }
+    body.trend-open { overflow:hidden; }
+    .trend-panel .section-head .trend-full { margin-left:auto; cursor:pointer; padding:7px 10px; }
+    .trend-panel .section-head .trend-full svg { width:15px; height:15px; display:block; fill:none; stroke:currentColor; stroke-width:2; }
+    .trend-panel .section-head .trend-close { margin-left:8px; cursor:pointer; }
+    @media (max-width: 600px) {
+      /* On a phone the trend window always fills the screen. */
+      .trend-panel.show { left:0; top:0; right:0; bottom:0; transform:none; width:auto; max-width:none; max-height:none; border-radius:0; margin:0; }
+      .trend-panel .section-head .trend-full { display:none; }
+      .trend-panel .section-head .trend-close { margin-left:auto; }
+      .trend-panel.show .trend-chart canvas { height:calc(100vh - 260px); min-height:200px; }
+    }
     .trend-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 15px 0; }
     .trend-seg { display:inline-flex; max-width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:11px; background:#0c2135; }
     .trend-seg button { border:0; background:transparent; color:#c6d6e7; padding:8px 13px; cursor:pointer; font-size:12px; white-space:nowrap; }
@@ -278,7 +294,7 @@
     .no-flexgap .tags > * { margin:0 4px 4px 0; }
     .no-flexgap .trend-controls > *, .no-flexgap .trend-custom > * { margin:0 10px 10px 0; }
     .no-flexgap .trend-stats > * { margin-right:28px; }
-    .no-flexgap .fullscreen-toggle, .no-flexgap button > .nav-count, .no-flexgap .section-head .search, .no-flexgap .trend-panel .section-head .trend-close { margin-left:auto; }
+    .no-flexgap .fullscreen-toggle, .no-flexgap button > .nav-count, .no-flexgap .section-head .search, .no-flexgap .trend-panel .section-head .trend-full { margin-left:auto; }
     @media (max-width: 780px) { .no-flexgap .section-head .sort { margin-left:auto; } }
     /* Chartplotter layout. A Navico plotter (B&G / Simrad / Lowrance)
        shows the page in its own browser, Chromium 69, driven by touch that
@@ -388,8 +404,9 @@
         <h1 id="heroTitle">Your Boat, Your Circuits</h1>
         <p>Monitor and control your boat's electrical systems.</p><div id="loadError" role="alert" hidden style="position:relative;z-index:1;margin-top:12px;padding:12px;border:1px solid var(--amber);border-radius:10px;background:var(--panel);line-height:1.5"></div><div id="writeGate" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid rgba(255,195,77,.35);border-radius:10px;background:rgba(255,195,77,.08);color:#ffd98a;font-size:12px;line-height:1.5"></div>
       </section>
-      <section class="section trend-panel" id="trendPanel">
-        <div class="section-head"><span>📈</span><div><h2 id="trendTitle"></h2><span class="subtle" id="trendSub"></span></div><button type="button" class="sort trend-close" onclick="closeTrend()" aria-label="Close trend">✕ Close</button></div>
+      <div class="trend-backdrop" id="trendBackdrop" onclick="closeTrend()"></div>
+      <section class="section trend-panel" id="trendPanel" role="dialog" aria-modal="true" aria-labelledby="trendTitle">
+        <div class="section-head"><span>📈</span><div><h2 id="trendTitle"></h2><span class="subtle" id="trendSub"></span></div><button type="button" class="sort trend-full" id="trendFull" onclick="toggleTrendFull()" aria-label="Full screen" aria-pressed="false" title="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="trendFullIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><button type="button" class="sort trend-close" onclick="closeTrend()" aria-label="Close trend">✕ Close</button></div>
         <div class="trend-controls"><div class="trend-seg" id="trendRanges"></div></div>
         <div class="trend-custom" id="trendCustom"><label>From <input type="datetime-local" id="trendFrom"></label><label>To <input type="datetime-local" id="trendTo"></label><button type="button" onclick="applyTrendCustom()">Apply</button><span id="trendCustomMsg"></span></div>
         <div class="trend-stats" id="trendStats"></div>
@@ -1086,14 +1103,32 @@
     trendEl('trendTitle').textContent = series.title;
     trendEl('trendSub').textContent = `${series.r.label} · ${series.path}`;
     trendEl('trendPanel').classList.add('show');
+    trendEl('trendBackdrop').classList.add('show');
+    document.body.classList.add('trend-open');
     loadTrend();
-    trendEl('trendPanel').scrollIntoView({ behavior:'smooth', block:'start' });
   }
+  // Full screen: the window fills the page (on a phone it always does).
+  const TREND_ICON_EXPAND = 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5', TREND_ICON_SHRINK = 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5';
+  window.toggleTrendFull = on => {
+    const panel = trendEl('trendPanel');
+    const full = typeof on === 'boolean' ? on : !panel.classList.contains('full');
+    panel.classList.toggle('full', full);
+    trendEl('trendFull').setAttribute('aria-pressed', String(full));
+    trendEl('trendFull').setAttribute('title', full ? 'Exit full screen' : 'Full screen');
+    trendEl('trendFullIcon').setAttribute('d', full ? TREND_ICON_SHRINK : TREND_ICON_EXPAND);
+    drawTrend();
+  };
   window.openTrend = slug => {
     const c = circuitBySlug(decodeURIComponent(slug)); if (!c) return;
     showTrend({ path: trendPath(c), title: c.name.trim(), r: READING.current });
   };
-  window.closeTrend = () => { trend.open = false; clearInterval(trend.timer); trendEl('trendPanel').classList.remove('show'); };
+  window.closeTrend = () => {
+    trend.open = false; clearInterval(trend.timer);
+    trendEl('trendPanel').classList.remove('show');
+    trendEl('trendBackdrop').classList.remove('show');
+    document.body.classList.remove('trend-open');
+    window.toggleTrendFull(false);
+  };
   window.setTrendRange = key => {
     if (key === 'custom') { trend.customOpen = true; trendControls(); return; } // nothing reloads until Apply
     trend.customOpen = false; trend.custom = null; trend.range = key; trend.data = [];

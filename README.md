@@ -202,7 +202,14 @@ Off by default: tick **Show the Monitoring tab** in the configuration panel to t
 | Environment | pressure senders | 130314 |
 | Inputs | switch inputs | (see Switch inputs) |
 
-A reading is matched by the NMEA 2000 instance set in the Configuration Tool, and the temperature or pressure source or tank fluid type. Each row says **LIVE**, or **NOT ON BUS** with the instance nothing is sending ("Nothing is sending instance 3 on NMEA 2000"), which is the number to set on the sending device. Where two devices use the same instance, the first one heard keeps it until it has been quiet for two minutes, so a reading never flips between two devices. NMEA 2000 "not available" values are never shown as readings.
+A reading is matched by the NMEA 2000 instance set in the Configuration Tool, and the temperature or pressure source or tank fluid type. Each row says **LIVE**, or **NOT ON BUS** with the instance nothing is sending ("Nothing is sending instance 3 on NMEA 2000"), which is the number to set on the sending device. NMEA 2000 "not available" values are never shown as readings.
+
+**Which device.** Instances are not unique across devices: a Victron charger sends a battery status on the battery's instance as well as the shunt, and a wired meter can share an instance with another device. So each reading comes from one device:
+
+1. A meter or sender wired to a CZone module is read only from that module's own address, learned from its status messages.
+2. A third-party meter or sender is never read from a CZone module's address.
+3. A third-party DC meter: where devices say what they are (127506), only one of the meter's DC type is used, and for a battery one that reports a state of charge beats one that does not, so a shunt beats a charger. Ties go to the lowest address, so the choice is the same after a restart.
+4. Otherwise the first device heard keeps the reading until it has been quiet for two minutes.
 
 Values are published under `electrical.czone.monitoring.<name>.*`, as the meters already were: `voltage`, `current`, `power`, `capacity.stateOfCharge`, `frequency`, `temperature`, `relativeHumidity`, `pressure`, `currentLevel`, `currentVolume`, `capacity`. **DC power** (watts) is volts × amps of the same 127508 message, so solar, alternator and wind output can be seen and trended.
 
@@ -217,7 +224,7 @@ With **Record trends** on, a value on the Monitoring tab, or the temperature chi
 
 ## Trends
 
-Off by default: tick **Record trends** in the configuration panel to turn it on. Boats that already send Signal K data to a database (for example InfluxDB with Grafana) can leave it off. When on, the plugin records each circuit's current and every monitored value, and the webapp charts them: the arrow at the end of a circuit row, or a value on the Monitoring tab, opens that trend at the top of the page, for the last 1 h, 24 h, 7 d, 31 d, 90 d or 1 y, or for a period of up to 366 days chosen under **Custom**.
+Off by default: tick **Record trends** in the configuration panel to turn it on. Boats that already send Signal K data to a database (for example InfluxDB with Grafana) can leave it off. When on, the plugin records each circuit's current and every monitored value, and the webapp charts them: the arrow at the end of a circuit row, or a value on the Monitoring tab, opens that trend in a window in the middle of the page (the page under it stays where it was; the window can be made full screen, and fills the screen on a phone), for the last 1 h, 24 h, 7 d, 31 d, 90 d or 1 y, or for a period of up to 366 days chosen under **Custom**.
 
 **What is stored.** The latest value of every `electrical.czone.<circuit>.current` path, and of every monitored value, is sampled every 10 seconds, however often CZone repeats it, and written to plain CSV files in two tiers:
 

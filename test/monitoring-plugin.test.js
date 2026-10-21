@@ -153,16 +153,75 @@ const M = 'electrical.czone.monitoring.'
     t.line('0DF21465 02 2F 05 E7 FF FF FF 00')
     t.line('15FD08E0 00 66 02 4B 73 FF FF FF')
     t.line('15FD0CE0 00 65 01 96 65 04 FF FF')
+    // The Meter Interface (module 4) is wired: its meters are read only from
+    // its own address, learned from its status message (bench: 0x09).
+    t.line('19F30309 08 00 3F 09 FF FF F4 01')
+    assert.deepStrictEqual(t.item('Power In').readings, [], 'not before the module\'s address is known')
+    t.line('1CFF0409 27 99 04 0E 00 00 00 00')
     t.line('19F30309 08 00 3F 09 FF FF F4 01')
     t.line('19F30009 08 00 00 00 09 00 00 00')
+    // Another device on instance 0 is not the Meter Interface.
+    t.line('19F303E0 08 00 10 27 FF FF F4 01')
     assert.deepStrictEqual(t.values('Victron Shunt'), { voltage: 13.27, current: -2.5, power: -33.2 })
     assert.deepStrictEqual(t.values('Ruuvi Tag'), { temperature: 295.15 })
     assert.deepStrictEqual(t.values('Victron Temp Sensor'), { temperature: 288.15 })
     assert.deepStrictEqual(t.values('Power In'), { voltage: 236.7, current: 0, power: 9, frequency: 50 })
+    // A third-party sender is never a CZone module's broadcast.
+    t.line('15FD0809 00 66 02 00 6D FF FF FF')
+    assert.deepStrictEqual(t.values('Ruuvi Tag'), { temperature: 295.15 })
     assert.strictEqual(t.live().trendsEnabled, true)
     const trend = t.get('/trend', { path: `${M}Ruuvi_Tag.temperature`, range: '1h' })
     assert.strictEqual(trend.latest && trend.latest.value, 295.15, JSON.stringify(trend))
     assert.strictEqual(t.get('/trend', { path: `${M}Victron_Shunt.power`, range: '1h' }).latest.value, -33.2)
+    t.plugin.stop()
+  }
+
+  // --- Shunt and charger on one battery instance. The Cerbo (0x65) sends the
+  //     Victron shunt (instance 2, with a state of charge); a charger (0x20,
+  //     a lower address) also sends a battery status on instance 2, and a
+  //     127506 without one. The shunt keeps the reading, whichever is first.
+  {
+    const t = startPlugin('TestBench-2026-10-01.zcf')
+    const shunt = () => { t.line('0DF21465 02 2F 05 E7 FF FF FF 00') }
+    const charger = () => { t.line('0DF21420 02 64 05 64 00 FF FF 00') } // 13.80 V, +10.0 A
+    // The charger is heard first, before anyone has said what it is.
+    charger()
+    assert.deepStrictEqual(t.values('Victron Shunt'), { voltage: 13.8, current: 10, power: 138 })
+    // Both say they are a battery on instance 2; only the shunt has a SoC.
+    t.line('0DF21220 40 0B 00 02 00 FF 64 FF'); t.line('0DF21220 41 FF FF FF FF FF FF FF')
+    t.line('0DF21265 20 0B 00 02 00 57 64 FF'); t.line('0DF21265 21 FF FF FF FF FF FF FF')
+    shunt(); charger()
+    assert.deepStrictEqual(t.values('Victron Shunt'), { voltage: 13.27, current: -2.5, power: -33.2, stateOfCharge: 0.87 })
+    charger(); charger()
+    assert.deepStrictEqual(t.values('Victron Shunt'), { voltage: 13.27, current: -2.5, power: -33.2, stateOfCharge: 0.87 }, 'the charger never takes it back')
+    // A device declaring another DC type on the instance is not used either,
+    // even with a lower address and a state of charge.
+    t.line('0DF21210 40 0B 00 02 01 50 FF FF'); t.line('0DF21210 41 FF FF FF FF FF FF FF')
+    t.line('0DF21410 02 70 05 0A 00 FF FF 00')
+    assert.strictEqual(t.values('Victron Shunt').voltage, 13.27)
+    t.plugin.stop()
+  }
+
+  // --- A third-party sender is never read from a CZone module's address,
+  //     even when it is the first heard.
+  {
+    const t = startPlugin('TestBench-2026-10-01.zcf')
+    t.line('1CFF0409 27 99 04 0E 00 00 00 00')
+    t.line('15FD0809 00 66 02 00 6D FF FF FF')
+    assert.deepStrictEqual(t.item('Ruuvi Tag').readings, [])
+    t.line('15FD08E0 00 66 02 4B 73 FF FF FF')
+    assert.deepStrictEqual(t.values('Ruuvi Tag'), { temperature: 295.15 })
+    t.plugin.stop()
+  }
+
+  // --- SugarShack: wired tanks (module 0x1A) read only from that module.
+  {
+    const t = startPlugin('SugarShack-20260927-01.zcf')
+    t.line('1CFF1C06 27 99 1A 03 80 00 00 00') // the COI's input message, from 0x06
+    t.line('19F21130 12 D4 30 A0 0F 00 00 FF') // instance 2 water, 50 %, but from 0x30
+    assert.deepStrictEqual(t.item('Port Water Tank').readings, [])
+    t.line('19F21106 12 D4 30 A0 0F 00 00 FF')
+    assert.deepStrictEqual(t.values('Port Water Tank'), { currentLevel: 0.5, currentVolume: 0.2, capacity: 0.4 })
     t.plugin.stop()
   }
 

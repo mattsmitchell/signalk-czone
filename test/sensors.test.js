@@ -111,6 +111,34 @@ assert.deepStrictEqual(sensors.senders({}), [])
   assert.strictEqual(sensors.circuitTemperatures([{ name: 'Fresh Water Pump', slug: 'P' }], list).size, 0)
 }
 
+// --- Which device (lib/sources) ---------------------------------------------
+
+{
+  const { createSourcePicker } = require('../lib/sources')
+  const pick = createSourcePicker()
+  const t0 = 1e12
+  const battery = { key: 'meter:House', module: 0, instance: 0, dcType: 'battery' }
+  // Two devices that both report a state of charge: the lower address, so the
+  // choice does not depend on which is heard first (or on a restart).
+  pick.noteDcDetailed(0, 0x40, 0, true, t0)
+  pick.noteDcDetailed(0, 0x30, 0, true, t0)
+  assert.strictEqual(pick.allowed(battery, 0x40, t0), false)
+  assert.strictEqual(pick.allowed(battery, 0x30, t0), true)
+  // Declarations go stale after the quiet time; then the first heard keeps it.
+  assert.strictEqual(pick.allowed(battery, 0x40, t0 + 121e3), true)
+  assert.strictEqual(pick.allowed(battery, 0x30, t0 + 122e3), false)
+  // Wired: only the module's learned address; nothing until it is learned.
+  const wired = { key: 'meter:MI', module: 4, instance: 0 }
+  assert.strictEqual(pick.allowed(wired, 9, t0), false)
+  pick.learn({ pgn: 65284, source: 9, data: hex('27 99 04 0E 00 00 00 00') })
+  assert.strictEqual(pick.allowed(wired, 9, t0), true)
+  assert.strictEqual(pick.allowed(wired, 0xE0, t0), false)
+  pick.learn({ pgn: 65284, source: 7, data: hex('26 99 05 0E 00 00 00 00') }) // not a CZone status
+  assert.strictEqual(pick.isCzone(7), false)
+  // Signal K's own output counts as a third-party device.
+  assert.strictEqual(pick.allowed({ key: 'cabin', module: 0, instance: 3 }, 'signalk', t0), true)
+}
+
 // --- candump ------------------------------------------------------------------
 
 assert.strictEqual(parseCandumpLine('  vecan0  09FD0C65   [8]  FF 66 02 C4 96 04 FF FF'), '0 R 09FD0C65 FF 66 02 C4 96 04 FF FF')

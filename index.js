@@ -9,6 +9,7 @@ const nmea = require('./lib/nmea2000')
 const monitoring = require('./lib/monitoring')
 const sensors = require('./lib/sensors')
 const { createCandump, PGNS: CANDUMP_PGNS } = require('./lib/candump')
+const { createSourcePicker } = require('./lib/sources')
 const { createTrends } = require('./lib/trends')
 const signalk = require('./lib/signalk')
 const confirmOffLib = require('./lib/confirm-off')
@@ -212,6 +213,8 @@ module.exports = function (app) {
   let monitorFastPacket = null
   let candump = null
   let jsonOutListener = null
+  // Which device each meter and sender is read from (lib/sources).
+  const sourcePicker = createSourcePicker()
   // Trend recording of circuit current (see lib/trends).
   let trends = null
   // Server-side change cache for circuit state/brightness notifications.
@@ -972,20 +975,22 @@ module.exports = function (app) {
       return
     }
     observeMeters(frame)
-    observeSensors(sensors.decodeSensorFrame(frame.pgn, frame.data), `n2k:${frame.source}`, frame.source, frame.pgn)
+    observeSensors(sensors.decodeSensorFrame(frame.pgn, frame.data), frame.source, frame.pgn)
   }
 
-  function observeSensors (readings, device, src, pgn) {
+  // `device` is the sender's NMEA 2000 address, or 'signalk' for a reading
+  // Signal K itself sends.
+  function observeSensors (readings, device, pgn) {
     if (!sensorRuntime || !readings.length) return
-    const source = { label: 'NMEA2000', type: 'NMEA2000', src: String(src), pgn }
-    for (const r of sensorRuntime.accept(readings, device)) publishMonitoringDelta(null, r.path, r.value, source)
+    const source = { label: 'NMEA2000', type: 'NMEA2000', src: String(device), pgn }
+    for (const r of sensorRuntime.accept(readings, device, Date.now(), sourcePicker.allowed)) publishMonitoringDelta(null, r.path, r.value, source)
   }
 
   // A reading Signal K itself sends onto NMEA 2000 (the "Signal K to NMEA
   // 2000" plugin, e.g. a Ruuvi tag bridged by a Bluetooth plugin).
   function handleJsonOut (message) {
     if (candump && candump.delivering()) return // candump sees it on the wire
-    observeSensors(sensors.decodeSensorJson(message), 'signalk', 'signalk', message && Number(message.pgn))
+    observeSensors(sensors.decodeSensorJson(message), 'signalk', message && Number(message.pgn))
   }
 
   // On a Victron GX only (Venus OS ships candump), and only with senders or
@@ -1060,9 +1065,15 @@ module.exports = function (app) {
   }
 
   function observeMeters (frame) {
+    // What each device says it is, for choosing between devices on one instance.
+    if (frame.pgn === monitoring.PGN_DC_DETAILED && frame.data && frame.data.length >= 4) {
+      sourcePicker.noteDcDetailed(frame.data[1], frame.source, frame.data[2], frame.data[3] <= 100)
+    }
     const observations = monitoringRuntime.observe(frame)
     for (const observation of observations) {
       const meter = observation.meter
+      const pick = { key: `meter:${meter.slug}`, module: meter.module, virtual: meter.virtual, instance: meter.instance, dcType: meter.type === 'DC' ? meter.dcType : null }
+      if (!sourcePicker.allowed(pick, frame.source)) continue
       for (const [field, value] of Object.entries(observation.values)) {
         if (!Number.isFinite(value)) continue
         const pathName = meter.signalK[field]
@@ -1094,6 +1105,7 @@ module.exports = function (app) {
   function handleRawFrame (line) {
     const frame = nmea.parseRawLine(line)
     if (!frame) return
+    sourcePicker.learn(frame)
     observeModeCommand(frame)
     handleMonitoringFrame(frame)
     if (frame.pgn === nmea.CZONE_DATABLOCK_PGN) {
@@ -1634,6 +1646,7 @@ module.exports = function (app) {
       candump = null
       if (monitorFastPacket) monitorFastPacket.clear()
       monitorFastPacket = null
+      sourcePicker.clear()
       sensorRuntime = null
       monitorValues = new Map()
       circuitTemps = new Map()
