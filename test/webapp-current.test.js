@@ -18,7 +18,7 @@ const context = vm.createContext({
   nameKey: c => c.name, circuitBySlug: slug => context.circuits.find(c => c.slug === slug),
   stateOf: c => c.state.state === 'ON', percentOf: c => c.state.percent,
   categoryData: () => ({ master: [] }), subCategoryList: () => [],
-  askMark: () => '', esc: s => s
+  askMark: () => '', tempChip: () => '', esc: s => s
 })
 vm.runInContext(
   section('  const currentOf =', '  const categoryData =') +

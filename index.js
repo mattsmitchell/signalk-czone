@@ -7,6 +7,9 @@ const inputs = require('./lib/inputs')
 const czone = require('./lib/czone')
 const nmea = require('./lib/nmea2000')
 const monitoring = require('./lib/monitoring')
+const sensors = require('./lib/sensors')
+const { createCandump, PGNS: CANDUMP_PGNS } = require('./lib/candump')
+const { createSourcePicker } = require('./lib/sources')
 const { createTrends } = require('./lib/trends')
 const signalk = require('./lib/signalk')
 const confirmOffLib = require('./lib/confirm-off')
@@ -20,6 +23,12 @@ const CZONE_CONFIG_BLOCK_HEADER = 23
 const CZONE_CONFIG_BLOCK_SIZE = 200
 const CZONE_CONFIG_READ_TIMEOUT_MS = 45000
 const PLUGIN_ID = 'signalk-czone'
+// A monitored value older than this is no longer live (NOT ON BUS).
+const MONITOR_LIVE_MS = 120e3
+// A circuit's temperature is dropped after this long without a reading.
+const TEMPERATURE_STALE_MS = 300e3
+const MONITOR_GROUPS = { battery: 'Batteries', solar: 'Solar', alternator: 'Alternators', converter: 'Converters', wind: 'Wind Generators' }
+const MONITORED_PGNS = new Set(CANDUMP_PGNS)
 const NMEA_READY_RETRY_MS = 500
 const NMEA_READY_RETRY_LIMIT = 40
 
@@ -160,6 +169,10 @@ module.exports = function (app) {
   const switchPane = createVictronSwitches(app, {
     log: m => log(m),
     version: require('./package.json').version,
+    getTemperature: slug => {
+      const t = circuitTemperature(slug)
+      return t ? t.kelvin : null
+    },
     getCurrent: skPath => {
       const m = /^electrical\.czone\.([^.]+)\.current$/.exec(skPath || '')
       const c = m && mapping && mapping.circuits.find(x => x.slug === m[1])
@@ -191,6 +204,17 @@ module.exports = function (app) {
     })
   })
   let monitoringRuntime = null
+  // Tank, temperature and pressure senders (lib/sensors), the latest value
+  // and time of every monitored path, and when each meter or sender was last
+  // heard from.
+  let sensorRuntime = null
+  let monitorValues = new Map()
+  let circuitTemps = new Map()
+  let monitorFastPacket = null
+  let candump = null
+  let jsonOutListener = null
+  // Which device each meter and sender is read from (lib/sources).
+  const sourcePicker = createSourcePicker()
   // Trend recording of circuit current (see lib/trends).
   let trends = null
   // Server-side change cache for circuit state/brightness notifications.
@@ -264,7 +288,17 @@ module.exports = function (app) {
     mapping = zcf.load(zcfPath())
     mapping.commandDeviceId = selectCommandDeviceId(mapping)
     publishedCircuitValues.clear()
-    monitoringRuntime = monitoring.createRuntime(mapping.meters || [])
+    // The parser gives { meters: [...] } with the table's details; older
+    // versions gave the list itself.
+    const meterList = Array.isArray(mapping.meters) ? mapping.meters : ((mapping.meters && mapping.meters.meters) || [])
+    monitoringRuntime = monitoring.createRuntime(meterList)
+    // Tank, temperature and pressure senders, the Monitoring tab and a
+    // circuit's temperature only when "Monitoring" is ticked (off by default).
+    // The meters are published either way.
+    const senderList = settings.monitoringEnabled === true ? sensors.senders(mapping, new Set(monitoringRuntime.meters.map(m => m.slug))) : []
+    sensorRuntime = sensors.createSensorRuntime(senderList)
+    circuitTemps = sensors.circuitTemperatures(mapping.circuits, sensorRuntime.senders)
+    monitorValues = new Map()
     switchInputs = inputs.switchInputs(mapping)
     inputState = new Map(switchInputs.map(i => [i.path, { state: null, since: null }]))
     runtimeState = new Map(mapping.circuits.map(c => [c.name, {
@@ -920,17 +954,126 @@ module.exports = function (app) {
 
   function publishMonitoringDelta (meter, pathName, value, source) {
     if (!monitoringRuntime || !Number.isFinite(value)) return
+    // Kept for the Monitoring tab (live or not) and handed to the trends
+    // before the change check: a steady reading is still a live one.
+    monitorValues.set(pathName, { value, at: Date.now() })
+    if (trends && !/\.capacity$/.test(pathName)) trends.observe(pathName, value)
     if (!monitoringRuntime.publishable(pathName, value)) return
     const delta = signalk.delta(pathName, value, source)
     if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
     else if (typeof app.emit === 'function') app.emit('delta', delta)
   }
 
-  function handleMonitoringFrame (frame) {
-    if (!monitoringRuntime) return
+  // Monitoring frames come from Signal K (canboatjs:rawoutput) or, on a GX,
+  // from candump. While candump delivers, it has every one of them, so the
+  // copies from Signal K are left alone.
+  function handleMonitoringFrame (frame, fromCandump = false) {
+    if (!monitoringRuntime || !MONITORED_PGNS.has(frame.pgn)) return
+    if (!fromCandump && candump && candump.delivering()) return
+    if (monitoring.FAST_PACKET_PGNS.has(frame.pgn)) {
+      if (monitorFastPacket) monitorFastPacket.accept(frame)
+      return
+    }
+    observeMeters(frame)
+    observeSensors(sensors.decodeSensorFrame(frame.pgn, frame.data), frame.source, frame.pgn)
+  }
+
+  // `device` is the sender's NMEA 2000 address, or 'signalk' for a reading
+  // Signal K itself sends.
+  function observeSensors (readings, device, pgn) {
+    if (!sensorRuntime || !readings.length) return
+    const source = { label: 'NMEA2000', type: 'NMEA2000', src: String(device), pgn }
+    for (const r of sensorRuntime.accept(readings, device, Date.now(), sourcePicker.allowed)) publishMonitoringDelta(null, r.path, r.value, source)
+  }
+
+  // A reading Signal K itself sends onto NMEA 2000 (the "Signal K to NMEA
+  // 2000" plugin, e.g. a Ruuvi tag bridged by a Bluetooth plugin).
+  function handleJsonOut (message) {
+    if (candump && candump.delivering()) return // candump sees it on the wire
+    observeSensors(sensors.decodeSensorJson(message), 'signalk', message && Number(message.pgn))
+  }
+
+  // On a Victron GX only (Venus OS ships candump), and only with senders or
+  // meters to read. `app._czoneSpawn` lets the tests stand in for candump.
+  function startCandump () {
+    const onVenus = typeof app._czoneSpawn === 'function' || fs.existsSync('/opt/victronenergy')
+    const wanted = monitoringRuntime && (monitoringRuntime.meters.length || sensorRuntime.senders.length)
+    if (settings.monitoringEnabled !== true || !onVenus || !wanted || settings.monitorCandump === false) return
+    candump = createCandump({
+      device: settings.monitorCanDevice || 'vecan0',
+      log,
+      spawnFn: typeof app._czoneSpawn === 'function' ? app._czoneSpawn : undefined,
+      onLine: line => {
+        const frame = nmea.parseRawLine(line)
+        if (frame) handleMonitoringFrame(frame, true)
+      }
+    })
+    candump.start()
+  }
+
+  // The temperature paired with a circuit (lib/sensors circuitTemperatures),
+  // while it is fresh.
+  function circuitTemperature (slug) {
+    const s = circuitTemps.get(slug)
+    const v = s && monitorValues.get(s.signalK.temperature)
+    if (!v || Date.now() - v.at > TEMPERATURE_STALE_MS) return null
+    return { kelvin: v.value, path: s.signalK.temperature, name: s.name }
+  }
+
+  // Everything the Monitoring tab shows: meters, senders and switch inputs,
+  // grouped, each with its readings and whether it is live.
+  function monitoringLive () {
+    if (settings.monitoringEnabled !== true) return { enabled: false, file: mapping ? mapping.fileName : null, trendsEnabled: settings.trendsEnabled === true, candump: null, items: [], temperatures: {} }
+    const now = Date.now()
+    const reading = (path, field) => {
+      const v = monitorValues.get(path)
+      return { field, path, value: v ? v.value : null, at: v ? new Date(v.at).toISOString() : null, live: !!v && now - v.at < MONITOR_LIVE_MS }
+    }
+    const item = (group, kind, x, fields) => {
+      const readings = fields.filter(f => x.signalK[f]).map(f => reading(x.signalK[f], f))
+      return { group, kind, name: x.name, slug: x.slug, instance: x.instance, thirdParty: x.thirdParty === true || x.virtual === true, live: readings.some(r => r.live), readings: readings.filter(r => r.value !== null) }
+    }
+    const items = []
+    for (const m of monitoringRuntime ? monitoringRuntime.meters : []) {
+      if (m.type === 'AC') items.push(item('AC Power', 'ac', m, ['voltage', 'current', 'power', 'frequency']))
+      else items.push(item(MONITOR_GROUPS[m.dcType] || 'DC', 'dc', m, ['voltage', 'current', 'power', 'stateOfCharge', 'temperature']))
+    }
+    for (const s of sensorRuntime ? sensorRuntime.senders : []) {
+      const group = s.kind === 'tank' ? 'Tanks' : s.kind === 'temperature' ? 'Temperatures' : 'Environment'
+      const x = item(group, s.kind, s, Object.keys(s.signalK))
+      x.source = s.source // temperature or pressure source, tank fluid type
+      if (s.kind === 'tank' && s.capacity && !x.readings.some(r => r.field === 'capacity')) x.capacity = s.capacity
+      items.push(x)
+    }
+    for (const i of switchInputs) {
+      const st = inputState.get(i.path) || {}
+      items.push({ group: 'Inputs', kind: 'input', name: i.name, slug: i.slug, path: i.path, decoded: i.decoded, live: st.state !== null && st.state !== undefined, state: st.state === undefined ? null : st.state, since: st.since || null, readings: [] })
+    }
+    const temperatures = {}
+    for (const slug of circuitTemps.keys()) {
+      const t = circuitTemperature(slug)
+      if (t) temperatures[slug] = t
+    }
+    return {
+      enabled: true,
+      file: mapping ? mapping.fileName : null,
+      trendsEnabled: settings.trendsEnabled === true,
+      candump: candump ? candump.status() : null,
+      items,
+      temperatures
+    }
+  }
+
+  function observeMeters (frame) {
+    // What each device says it is, for choosing between devices on one instance.
+    if (frame.pgn === monitoring.PGN_DC_DETAILED && frame.data && frame.data.length >= 4) {
+      sourcePicker.noteDcDetailed(frame.data[1], frame.source, frame.data[2], frame.data[3] <= 100)
+    }
     const observations = monitoringRuntime.observe(frame)
     for (const observation of observations) {
       const meter = observation.meter
+      const pick = { key: `meter:${meter.slug}`, module: meter.module, virtual: meter.virtual, instance: meter.instance, dcType: meter.type === 'DC' ? meter.dcType : null }
+      if (!sourcePicker.allowed(pick, frame.source)) continue
       for (const [field, value] of Object.entries(observation.values)) {
         if (!Number.isFinite(value)) continue
         const pathName = meter.signalK[field]
@@ -962,6 +1105,7 @@ module.exports = function (app) {
   function handleRawFrame (line) {
     const frame = nmea.parseRawLine(line)
     if (!frame) return
+    sourcePicker.learn(frame)
     observeModeCommand(frame)
     handleMonitoringFrame(frame)
     if (frame.pgn === nmea.CZONE_DATABLOCK_PGN) {
@@ -1266,9 +1410,9 @@ module.exports = function (app) {
         },
         trendsEnabled: {
           type: 'boolean',
-          title: 'Record circuit current trends',
+          title: 'Record trends',
           default: false,
-          description: 'Off by default. Stores each circuit\'s current every 10 seconds as plain CSV files, for the trend charts in the webapp. Not needed if the data already goes to a database such as InfluxDB. On a Victron GX trends go to an SD card or USB stick only, never to internal flash; without a writable card nothing is recorded.'
+          description: 'Off by default. Stores each circuit\'s current and every monitored value (meters, tanks, temperatures, pressure) every 10 seconds as plain CSV files, for the trend charts in the webapp. Not needed if the data already goes to a database such as InfluxDB. On a Victron GX trends go to an SD card or USB stick only, never to internal flash; without a writable card nothing is recorded.'
         },
         trendDirectory: {
           type: 'string',
@@ -1353,6 +1497,24 @@ module.exports = function (app) {
           title: 'Show CZone circuits in the Victron switch pane',
           default: false,
           description: 'Victron GX only (Venus OS 3.60 or later). The circuits appear as switches on the GX touch screen, Remote Console and VRM, one card per CZone category. Switching there needs CZone read/write control enabled, and circuits set to confirm before turning off (on) are not turned off (on) from there unless other apps are allowed to.'
+        },
+        monitoringEnabled: {
+          type: 'boolean',
+          title: 'Monitoring',
+          default: false,
+          description: 'Off by default. Adds the Monitoring tab to the webapp: every meter, tank, temperature, humidity and pressure sender in the ZCF, live, with DC watts, and a circuit\'s temperature beside its name and in its switch pane label. Meter readings are published to Signal K either way.'
+        },
+        monitorCandump: {
+          type: 'boolean',
+          title: 'On a Victron GX, read monitoring messages straight off the CAN interface',
+          default: true,
+          description: 'Signal K does not pass on what the GX itself sends onto NMEA 2000, such as a Ruuvi tag or a GX tank input bridged by Venus OS. With this on, the plugin reads those messages (tank, temperature, humidity, pressure, battery and AC) with candump, as a CZone display sees them. Only on Venus OS.'
+        },
+        monitorCanDevice: {
+          type: 'string',
+          title: 'CAN interface for the above',
+          default: 'vecan0',
+          description: 'vecan0 is the GX\'s VE.Can / NMEA 2000 port.'
         },
         victronSwitchCurrent: {
           type: 'boolean',
@@ -1440,9 +1602,15 @@ module.exports = function (app) {
           decodeCurrentPacket(packet)
           if (packet.pgn === CURRENT_PGN_DC) decodeDcStatePacket(packet)
         })
+        monitorFastPacket = nmea.createFastPacketReassembler(packet => {
+          if (monitoringRuntime) observeMeters({ pgn: packet.pgn, source: packet.source, data: packet.payload })
+        }, { pgns: monitoring.FAST_PACKET_PGNS })
         rawListener = handleRawFrame
         app.on('canboatjs:rawoutput', rawListener)
+        jsonOutListener = handleJsonOut
+        app.on('nmea2000JsonOut', jsonOutListener)
       }
+      startCandump()
 
       startupModeInferenceDone = false
       if (startupModeInferenceTimer) clearTimeout(startupModeInferenceTimer)
@@ -1472,6 +1640,16 @@ module.exports = function (app) {
       lastNmeaOutput = null
       if (rawListener && typeof app.removeListener === 'function') app.removeListener('canboatjs:rawoutput', rawListener)
       rawListener = null
+      if (jsonOutListener && typeof app.removeListener === 'function') app.removeListener('nmea2000JsonOut', jsonOutListener)
+      jsonOutListener = null
+      if (candump) candump.stop()
+      candump = null
+      if (monitorFastPacket) monitorFastPacket.clear()
+      monitorFastPacket = null
+      sourcePicker.clear()
+      sensorRuntime = null
+      monitorValues = new Map()
+      circuitTemps = new Map()
       if (reassembler) reassembler.clear()
       if (monitoringRuntime) monitoringRuntime.clear()
       monitoringRuntime = null
@@ -1531,6 +1709,8 @@ module.exports = function (app) {
           meters: mapping ? mapping.meters : []
         })
       })
+
+      router.get('/monitoring/live', (_req, res) => res.json(monitoringLive()))
 
       router.get('/monitoring/tanks', (_req, res) => {
         res.json({

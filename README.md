@@ -189,11 +189,44 @@ The dimmed encoding has been checked against controlled observations at 60%, 75%
 
 The decoded secondary state and percentage are retained in the plugin diagnostics for each tracked DC circuit. The public Signal K current path remains unchanged (`electrical.czone.<circuit>.current`).
 
+## Monitoring
+
+Off by default: tick **Show the Monitoring tab** in the configuration panel to turn it on. Meter readings are published to Signal K either way. When on, the webapp's **Monitoring** tab lists every meter and sender in the ZCF, live, with nothing else to set up:
+
+| Group | From the ZCF | NMEA 2000 |
+| --- | --- | --- |
+| Batteries, Solar, Alternators, Converters, Wind Generators | DC meters, by their DC type | 127508 (volts, amps, temperature), 127506 (state of charge) |
+| AC Power | AC meters | 127744 / 127747, or 127503 / 127504 |
+| Tanks | tank senders, wired or third-party (capacity from the tank settings) | 127505 |
+| Temperatures | temperature senders, wired or third-party | 130312 / 130316, and 130313 humidity on the same instance |
+| Environment | pressure senders | 130314 |
+| Inputs | switch inputs | (see Switch inputs) |
+
+A reading is matched by the NMEA 2000 instance set in the Configuration Tool, and the temperature or pressure source or tank fluid type. Each row says **LIVE**, or **NOT ON BUS** with the instance nothing is sending ("Nothing is sending instance 3 on NMEA 2000"), which is the number to set on the sending device. NMEA 2000 "not available" values are never shown as readings.
+
+**Which device.** Instances are not unique across devices: a Victron charger sends a battery status on the battery's instance as well as the shunt, and a wired meter can share an instance with another device. So each reading comes from one device:
+
+1. A meter or sender wired to a CZone module is read only from that module's own address, learned from its status messages.
+2. A third-party meter or sender is never read from a CZone module's address.
+3. A third-party DC meter: where devices say what they are (127506), only one of the meter's DC type is used, and for a battery one that reports a state of charge beats one that does not, so a shunt beats a charger. Ties go to the lowest address, so the choice is the same after a restart.
+4. Otherwise the first device heard keeps the reading until it has been quiet for two minutes.
+
+Values are published under `electrical.czone.monitoring.<name>.*`, as the meters already were: `voltage`, `current`, `power`, `capacity.stateOfCharge`, `frequency`, `temperature`, `relativeHumidity`, `pressure`, `currentLevel`, `currentVolume`, `capacity`. **DC power** (watts) is volts × amps of the same 127508 message, so solar, alternator and wind output can be seen and trended.
+
+**Senders bridged onto NMEA 2000 by the same machine.** Signal K does not pass a plugin its own transmissions, or a GX's:
+
+- A reading sent by Signal K's **Signal K to NMEA 2000** plugin (for example a Ruuvi tag from a Bluetooth plugin) is taken from what that plugin hands Signal K to send.
+- On a **Victron GX**, readings Venus OS itself sends (a Ruuvi tag or a GX tank input bridged by the GX) are read straight off the CAN interface with `candump`, as a CZone display sees them. While it delivers, the copies from Signal K are not used. Setting: **On a Victron GX, read monitoring messages straight off the CAN interface** (on; interface `vecan0`).
+
+**A circuit's temperature.** A temperature sender named after a circuit ("Freezer Temperature" or "Freezer Temp" for the circuit "Freezer", ignoring case and punctuation) is shown as a chip beside the circuit's name, and in its Victron switch pane label: "Freezer (-18.2 °C, 2.9 A)". A name two senders share pairs with nothing. The temperature is dropped after five minutes without a reading.
+
+With **Record trends** on, a value on the Monitoring tab, or the temperature chip, opens that value's trend.
+
 ## Trends
 
-Off by default: tick **Record circuit current trends** in the configuration panel to turn it on. Boats that already send Signal K data to a database (for example InfluxDB with Grafana) can leave it off. When on, the plugin records each circuit's current and the webapp charts it: the arrow at the end of a circuit row opens that circuit's trend at the top of the page, for the last 1 h, 24 h, 7 d, 31 d, 90 d or 1 y, or for a period of up to 366 days chosen under **Custom**.
+Off by default: tick **Record trends** in the configuration panel to turn it on. Boats that already send Signal K data to a database (for example InfluxDB with Grafana) can leave it off. When on, the plugin records each circuit's current and every monitored value, and the webapp charts them: the arrow at the end of a circuit row, or a value on the Monitoring tab, opens that trend in a window in the middle of the page (the page under it stays where it was; the window can be made full screen, and fills the screen on a phone), for the last 1 h, 24 h, 7 d, 31 d, 90 d or 1 y, or for a period of up to 366 days chosen under **Custom**.
 
-**What is stored.** The latest value of every `electrical.czone.<circuit>.current` path is sampled every 10 seconds, however often CZone repeats it, and written to plain CSV files in two tiers:
+**What is stored.** The latest value of every `electrical.czone.<circuit>.current` path, and of every monitored value, is sampled every 10 seconds, however often CZone repeats it, and written to plain CSV files in two tiers:
 
 | Tier | File | Row | Used for |
 | --- | --- | --- | --- |
