@@ -103,6 +103,33 @@
     .fav { border:0; background:transparent; cursor:pointer; color:#7890a6; font-size:18px; padding:4px; }
     .fav.on { color:#ffc34d; text-shadow:0 0 12px rgba(255,195,77,.25); }
     .circuit-name { min-width:0; }
+    /* Monitoring tab. No flex gap: the plotter's browser (Chromium 69) lacks it. */
+    .mon-group { padding:12px 15px 6px; color:#7891aa; font-size:11px; text-transform:uppercase; letter-spacing:1.2px; background:rgba(21,139,229,.06); border-bottom:1px solid rgba(148,193,235,.10); }
+    .mon-row { display:flex; flex-wrap:wrap; align-items:center; padding:10px 15px 10px 27px; border-bottom:1px solid rgba(148,193,235,.10); min-height:60px; }
+    .mon-row .circuit-name { flex:1 1 180px; margin-right:10px; }
+    .mon-row.off .circuit-name strong { color:#8fa7be; }
+    .mon-values { display:flex; flex-wrap:wrap; justify-content:flex-end; }
+    .mon-val { margin:3px 0 3px 8px; min-width:78px; padding:6px 10px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--text); text-align:right; font:inherit; }
+    button.mon-val { cursor:pointer; }
+    button.mon-val:hover { border-color:rgba(24,213,232,.5); }
+    .mon-val b { font-size:15px; font-weight:700; }
+    .mon-val i { font-style:normal; color:#8fa7be; font-size:12px; margin-left:3px; }
+    .mon-val small { display:block; color:#738ca4; font-size:10px; margin-top:1px; }
+    .mon-val.on { border-color:rgba(46,213,115,.55); background:rgba(46,213,115,.12); }
+    .mon-live { margin-left:10px; font-size:10px; font-weight:700; letter-spacing:.6px; color:#2ed573; white-space:nowrap; }
+    .mon-row.off .mon-live { color:#ffb84d; }
+    .temp-chip { display:inline-block; margin-left:8px; padding:1px 7px; border-radius:9px; border:1px solid rgba(24,213,232,.35); background:rgba(24,213,232,.08); color:var(--cyan); font:inherit; font-size:11px; font-weight:600; vertical-align:1px; }
+    button.temp-chip { cursor:pointer; }
+    @media (max-width: 600px) {
+      .mon-row { padding-left:15px; }
+      .mon-row .circuit-name { flex:1 1 0; }
+      .mon-row .circuit-name small { white-space:normal; }
+      .mon-live { order:2; }
+      .mon-values { order:3; width:100%; justify-content:flex-start; margin:4px 0 0 -8px; }
+      .mon-val { min-width:66px; padding:6px 8px; }
+    }
+    .mfd .mon-row .circuit-name strong { font-size:17px; }
+    .mfd .mon-val b { font-size:17px; }
     .circuit-name strong { display:block; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .circuit-name small { display:block; color:#738ca4; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tags { display:flex; flex-wrap:wrap; gap:4px; }
@@ -442,6 +469,8 @@
     'Propulsion Management':'fan', 'House/Habitat':'house', Appliances:'appliance', 'Deck Equipment':'anchor',
     Batteries:'battery', Solar:'sun', Alternators:'gear', Converters:'swap', 'Wind Generators':'fan', 'AC Power':'ac', Tanks:'tank', Temperatures:'temp', Environment:'cloud', 'Circuit current':'bolt', Inputs:'toggle' };
   const mfdIcon = key => `<svg class="ico" viewBox="0 0 24 24">${MFD_ICONS[MFD_ICON_FOR[key]] || MFD_ICONS.dot}</svg>`;
+  // The Monitoring tab's data (GET /monitoring/live).
+  let monitor = { items: [], temperatures: {}, trendsEnabled: false };
   let circuits = [], status = {}, modes = [], activeMode = null, vesselName = '', view = 'all', category = null, query = '', sort = 'name', socket = null;
   let socketReconnectTimer = null, watchdogTimer = null, lastSocketUpdateAt = 0, socketConnected = false, socketEverOpen = false;
   const WS_WATCHDOG_MS = 120000;
@@ -479,7 +508,7 @@
   const color = c => categoryColors[c] || '#4bb5ff';
 
   function saveFavorites() { localStorage.setItem(favoritesKey, JSON.stringify([...favorites])); }
-  function setView(v) { view=v; category=null; render(); }
+  function setView(v) { view=v; category=null; render(); if (v === 'monitor') { monitorLastFetch = 0; refreshMonitoring(); } }
   function setCategory(c) { category=c; view='category'; render(); }
   window.setView = setView; window.setCategory = setCategory;
 
@@ -488,6 +517,7 @@
       ['all','⌂','All Circuits',circuits.length], ['inuse','●','In Use',activeCount()], ['favorites','☆','Favorites',circuits.filter(c=>favorites.has(nameKey(c))).length],
       ['ac','♆','AC',masterCount('AC')], ['dc','▣','DC',masterCount('DC')]
     ];
+    if (monitor.items.length) items.push(['monitor','◔','Monitoring',monitor.items.length]);
     document.querySelector('#mainNav').innerHTML = items.map(([v,i,t,n]) => `<button class="${view===v && !category?'active':''}" onclick="setView('${v}')"><span class="nav-icon">${MFD ? mfdIcon(v) : i}</span>${t}<span class="nav-count">${n}</span></button>`).join('');
   }
 
@@ -514,12 +544,85 @@
   }
 
   function renderCircuits() {
+    if (view === 'monitor' && !category) { renderMonitoring(); return; }
     const list = currentList();
     const title = category || ({all:'All Circuits',inuse:'In Use',favorites:'Favorites',ac:'AC Circuits',dc:'DC Circuits',search:'Search Results'}[view] || 'Circuits');
     document.querySelector('#sectionTitle').textContent = title;
     document.querySelector('#sectionCount').textContent = `${list.length} circuit${list.length===1?'':'s'}`;
     document.querySelector('#sectionIcon').textContent = MFD ? '' : category ? icon(category) : view==='favorites' ? '☆' : view==='inuse' ? '●' : '⚡';
     document.querySelector('#circuits').innerHTML = list.length ? list.map(circuitRow).join('') : `<div class="empty">No circuits match this view.</div>`;
+  }
+
+  // A temperature paired with the circuit by name ("Freezer" and "Freezer
+  // Temperature"), from the Monitoring data. Opens its trend when trends are on.
+  function tempChip(c) {
+    const t = monitor.temperatures[c.slug];
+    if (!t || !Number.isFinite(t.kelvin)) return '';
+    const text = `${(t.kelvin - 273.15).toFixed(1)}°C`;
+    return monitor.trendsEnabled
+      ? `<button type="button" class="temp-chip" title="${esc(t.name)} trend" onclick="event.stopPropagation();openSeries('${encodeURIComponent(t.path)}','${encodeURIComponent(t.name)}','temperature')">${text}</button>`
+      : `<span class="temp-chip" title="${esc(t.name)}">${text}</span>`;
+  }
+
+  const MONITOR_GROUPS = ['Batteries','Solar','Alternators','Converters','Wind Generators','DC','AC Power','Tanks','Temperatures','Environment','Inputs'];
+  window.openSeries = (path, name, field) => {
+    path = decodeURIComponent(path);
+    const item = monitor.items.find(i => i.readings.some(r => r.path === path));
+    showTrend({ path, title: decodeURIComponent(name), r: readingFor(item, field) });
+  };
+
+  function monitorValue(item, r) {
+    const u = readingFor(item, r.field);
+    const box = `<b>${u.f(r.value).toFixed(u.dp)}</b><i>${u.unit}</i><small>${u.label}</small>`;
+    return monitor.trendsEnabled && r.field !== 'capacity'
+      ? `<button type="button" class="mon-val" title="${u.label} trend" onclick="openSeries('${encodeURIComponent(r.path)}','${encodeURIComponent(item.name)}','${r.field}')">${box}</button>`
+      : `<div class="mon-val">${box}</div>`;
+  }
+
+  function monitorRow(item) {
+    let values = '', sub;
+    if (item.kind === 'input') {
+      values = item.state === null ? '' : `<div class="mon-val ${item.state ? 'on' : ''}"><b>${item.state ? 'ON' : 'OFF'}</b><small>Switch input</small></div>`;
+      sub = item.decoded === false ? 'This kind of module is not read yet' : item.live ? (item.since ? `Since ${new Date(item.since).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}` : 'Switch input') : 'No status from its module yet';
+    } else {
+      values = item.live ? item.readings.map(r => monitorValue(item, r)).join('') : '';
+      if (item.live && item.capacity) values += `<div class="mon-val"><b>${Math.round(item.capacity * 1000)}</b><i>L</i><small>Capacity</small></div>`;
+      sub = item.live ? `Instance ${item.instance}${item.thirdParty ? ' · third-party' : ''}` : `Nothing is sending instance ${item.instance} on NMEA 2000`;
+    }
+    return `<div class="mon-row ${item.live ? '' : 'off'}"><div class="circuit-name"><strong>${esc(item.name)}</strong><small>${esc(sub)}</small></div><div class="mon-values">${values}</div><span class="mon-live">${item.live ? 'LIVE' : 'NOT ON BUS'}</span></div>`;
+  }
+
+  function renderMonitoring() {
+    const live = monitor.items.filter(i => i.live).length;
+    document.querySelector('#sectionTitle').textContent = 'Monitoring';
+    document.querySelector('#sectionCount').textContent = `${monitor.items.length} item${monitor.items.length === 1 ? '' : 's'} · ${live} live`;
+    document.querySelector('#sectionIcon').textContent = MFD ? '' : '◔';
+    const groups = MONITOR_GROUPS.concat(monitor.items.map(i => i.group).filter(g => MONITOR_GROUPS.indexOf(g) < 0));
+    const q = query.toLowerCase();
+    let html = '';
+    for (const g of groups) {
+      const rows = monitor.items.filter(i => i.group === g && (!q || `${i.name} ${g}`.toLowerCase().includes(q)));
+      if (rows.length) html += `<div class="mon-group">${esc(g)}</div>` + rows.map(monitorRow).join('');
+    }
+    document.querySelector('#circuits').innerHTML = html || '<div class="empty">Nothing to monitor in this configuration.</div>';
+  }
+
+  // Every 5 s on the Monitoring tab, every 30 s elsewhere (temperature chips).
+  let monitorLastFetch = 0;
+  async function refreshMonitoring() {
+    const now = Date.now();
+    if (view !== 'monitor' && now - monitorLastFetch < 30000) return;
+    monitorLastFetch = now;
+    try {
+      const r = await fetch(`${API}/monitoring/live`, { cache:'no-store', credentials:'include' });
+      if (!r.ok) return;
+      const data = await r.json();
+      const chips = () => JSON.stringify(Object.keys(monitor.temperatures).map(k => [k, monitor.temperatures[k].kelvin.toFixed(1)]).concat([monitor.items.length, monitor.trendsEnabled]));
+      const before = chips();
+      monitor = { items: Array.isArray(data.items) ? data.items : [], temperatures: data.temperatures || {}, trendsEnabled: data.trendsEnabled === true };
+      if (view === 'monitor' && !category) { renderMonitoring(); renderNav(); }
+      else if (chips() !== before) render(); // only when a chip or the tab changed: a redraw would cut short a slider being moved
+    } catch (_) { /* the next round tries again */ }
   }
 
   const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
@@ -538,7 +641,7 @@
     const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" data-circuit-slug="${esc(c.slug)}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && current ? current : (on?'ON':'OFF'))}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct == null ? 100 : pct))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
     const sending = p ? `<span class="sending">Sending…</span>` : '';
-    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}${askMark(c)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div>${status.trendsEnabled === true ? `<button type="button" class="arrow" title="Current trend" aria-label="Current trend for ${esc(c.name)}" onclick="openTrend('${encodeURIComponent(c.slug)}')">›</button>` : '<span class="arrow">›</span>'}</div>`;
+    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}${askMark(c)}${tempChip(c)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div>${status.trendsEnabled === true ? `<button type="button" class="arrow" title="Current trend" aria-label="Current trend for ${esc(c.name)}" onclick="openTrend('${encodeURIComponent(c.slug)}')">›</button>` : '<span class="arrow">›</span>'}</div>`;
   }
 
   function previewPercent(el) { const out=el.parentElement.querySelector('.percent'); out.textContent=el.value+'%'; }
@@ -949,20 +1052,46 @@
   const TREND_RANGES = [['1h','1 h'], ['24h','24 h'], ['7d','7 d'], ['31d','31 d'], ['90d','90 d'], ['1y','1 y']];
   const TREND_RANGE_MS = { '1h':3600e3, '24h':86400e3, '7d':7*86400e3, '31d':31*86400e3, '90d':90*86400e3, '1y':365*86400e3 };
   const TREND_RGB = '56,169,255';
-  const trend = { open:false, circuit:null, range:'24h', custom:null, customOpen:false, start:0, end:0, data:[], gapMs:0, latest:null, hover:null, geom:null, timer:null, seq:0 };
+  // How each kind of reading is shown: Signal K units in, display units out.
+  // `zero`: the chart's scale starts at zero.
+  const READING = {
+    current: { label:'Current', unit:'A', dp:1, zero:true, f:v => v },
+    voltage: { label:'Voltage', unit:'V', dp:2, f:v => v },
+    power: { label:'Power', unit:'W', dp:0, zero:true, f:v => v },
+    stateOfCharge: { label:'Charge', unit:'%', dp:0, zero:true, f:v => v * 100 },
+    temperature: { label:'Temperature', unit:'°C', dp:1, f:v => v - 273.15 },
+    relativeHumidity: { label:'Humidity', unit:'%', dp:0, zero:true, f:v => v * 100 },
+    pressure: { label:'Pressure', unit:'kPa', dp:1, f:v => v / 1000 },
+    currentLevel: { label:'Level', unit:'%', dp:0, zero:true, f:v => v * 100 },
+    currentVolume: { label:'Volume', unit:'L', dp:0, zero:true, f:v => v * 1000 },
+    capacity: { label:'Capacity', unit:'L', dp:0, f:v => v * 1000 },
+    frequency: { label:'Frequency', unit:'Hz', dp:1, f:v => v }
+  };
+  // Atmospheric pressure (source 0) in hPa, AC volts to one decimal.
+  function readingFor(item, field) {
+    const r = READING[field] || { label:field, unit:'', dp:1, f:v => v };
+    if (field === 'pressure' && item && item.source === 0) return Object.assign({}, r, { unit:'hPa', dp:0, f:v => v / 100 });
+    if (field === 'voltage' && item && item.kind === 'ac') return Object.assign({}, r, { dp:1 });
+    return r;
+  }
+  const trend = { open:false, series:null, range:'24h', custom:null, customOpen:false, start:0, end:0, data:[], gapMs:0, latest:null, hover:null, geom:null, timer:null, seq:0 };
   const trendEl = id => document.querySelector('#' + id);
   const trendPath = c => `electrical.czone.${c.slug}.current`;
   // datetime-local wants local time as YYYY-MM-DDTHH:MM.
   const toLocalInput = ms => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60e3); return d.toISOString().slice(0, 16); };
 
-  window.openTrend = slug => {
-    const c = circuitBySlug(decodeURIComponent(slug)); if (!c) return;
-    trend.open = true; trend.circuit = c; trend.data = []; trend.hover = null;
-    trendEl('trendTitle').textContent = c.name.trim();
-    trendEl('trendSub').textContent = `Current · ${trendPath(c)}`;
+  // A trend is one Signal K path: a circuit's current, or any monitored value.
+  function showTrend(series) {
+    trend.open = true; trend.series = series; trend.data = []; trend.hover = null;
+    trendEl('trendTitle').textContent = series.title;
+    trendEl('trendSub').textContent = `${series.r.label} · ${series.path}`;
     trendEl('trendPanel').classList.add('show');
     loadTrend();
     trendEl('trendPanel').scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+  window.openTrend = slug => {
+    const c = circuitBySlug(decodeURIComponent(slug)); if (!c) return;
+    showTrend({ path: trendPath(c), title: c.name.trim(), r: READING.current });
   };
   window.closeTrend = () => { trend.open = false; clearInterval(trend.timer); trendEl('trendPanel').classList.remove('show'); };
   window.setTrendRange = key => {
@@ -989,7 +1118,7 @@
   function trendMsg(text) { const m = trendEl('trendMsg'); m.textContent = text; m.classList.toggle('show', !!text); }
 
   async function loadTrend() {
-    if (!trend.open || !trend.circuit) return;
+    if (!trend.open || !trend.series) return;
     trendControls();
     const seq = ++trend.seq;
     if (!trend.data.length) { trendMsg('Loading…'); trendStats(); drawTrend(); }
@@ -997,14 +1126,16 @@
     const query = custom ? `from=${trend.custom.from}&to=${trend.custom.to}` : `range=${trend.range}`;
     let res;
     try {
-      const r = await fetch(`${API}/trend?path=${encodeURIComponent(trendPath(trend.circuit))}&${query}`, { cache:'no-store', credentials:'include' });
+      const r = await fetch(`${API}/trend?path=${encodeURIComponent(trend.series.path)}&${query}`, { cache:'no-store', credentials:'include' });
       res = await r.json();
     } catch (e) { res = { available:false, detail:e.message }; }
     if (seq !== trend.seq || !trend.open) return;
     // Kept as [t, value, min, max]; min and max are null for full detail.
-    trend.data = (Array.isArray(res.data) ? res.data : []).map(p => [p[0], p[1], p.length > 2 ? p[2] : null, p.length > 3 ? p[3] : null]);
+    // Converted to display units here, so the chart and figures need not know.
+    const f = trend.series.r.f, fx = v => (v === null || v === undefined ? null : f(v));
+    trend.data = (Array.isArray(res.data) ? res.data : []).map(p => [p[0], f(p[1]), p.length > 2 ? fx(p[2]) : null, p.length > 3 ? fx(p[3]) : null]);
     trend.gapMs = Number(res.gapMs) || 16 * 60e3;
-    trend.latest = res.latest && Number.isFinite(res.latest.value) ? res.latest.value : null;
+    trend.latest = res.latest && Number.isFinite(res.latest.value) ? f(res.latest.value) : null;
     const now = Date.now();
     trend.end = Number(res.end) || (custom ? trend.custom.to : now);
     trend.start = Number(res.start) || (custom ? trend.custom.from : now - (TREND_RANGE_MS[trend.range] || TREND_RANGE_MS['24h']));
@@ -1034,7 +1165,8 @@
       area += dt * (d[i][1] + d[i - 1][1]) / 2; span += dt;
     }
     const avg = span ? area / span : d.reduce((sum, p) => sum + p[1], 0) / d.length;
-    const tile = (icon, label, v) => `<div class="stat"><div class="stat-icon">${icon}</div><div><strong>${v.toFixed(1)} A</strong><span>${label}</span></div></div>`;
+    const u = trend.series.r;
+    const tile = (icon, label, v) => `<div class="stat"><div class="stat-icon">${icon}</div><div><strong>${v.toFixed(u.dp)} ${u.unit}</strong><span>${label}</span></div></div>`;
     // "Now" is the live value. The last row of a long range is an average, and
     // a past period or a circuit that is not reporting has no "now".
     const first = trend.latest !== null && trend.range !== 'custom' ? tile('●', 'Now', trend.latest) : tile('●', 'Last', d[d.length - 1][1]);
@@ -1070,11 +1202,12 @@
     if (!d.length || !W) return;
     ctx.font = '11px Inter, system-ui, sans-serif';
 
-    // Current is shown from zero, and the scale covers the min-max band.
-    const y = trendTicks(Math.min(0, ...d.map(trendLow)), Math.max(...d.map(trendHigh)), 5);
+    // Current, power and levels are shown from zero; the scale covers the min-max band.
+    const lows = d.map(trendLow);
+    const y = trendTicks(trend.series.r.zero ? Math.min(0, ...lows) : Math.min(...lows), Math.max(...d.map(trendHigh)), 5);
     let dp = Math.max(0, -Math.floor(Math.log10(y.step) + 1e-9));
     if (y.ticks.some(t => Math.abs(t * Math.pow(10, dp) - Math.round(t * Math.pow(10, dp))) > 1e-6)) dp++;
-    const pad = { l: Math.max(...y.ticks.map(t => ctx.measureText(t.toFixed(dp)).width), ctx.measureText('A').width) + 14, r:12, t:12, b:26 };
+    const pad = { l: Math.max(...y.ticks.map(t => ctx.measureText(t.toFixed(dp)).width), ctx.measureText(trend.series.r.unit).width) + 14, r:12, t:12, b:26 };
     const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b, t0 = trend.start, t1 = trend.end, base = pad.t + ph;
     const X = t => pad.l + ((t - t0) / (t1 - t0)) * pw;
     const Y = v => pad.t + (1 - (v - y.lo) / (y.hi - y.lo)) * ph;
@@ -1150,8 +1283,9 @@
     trend.hover = p;
     drawTrend();
     const when = new Date(p[0]).toLocaleString([], Object.assign({ weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }, g.t1 - g.t0 > 300 * 86400e3 ? { year:'numeric' } : {}));
-    const spread = p[2] !== null && p[3] !== p[2] ? `<small>min ${p[2].toFixed(1)} · max ${p[3].toFixed(1)}</small>` : '';
-    tip.innerHTML = `<b>${p[1].toFixed(1)} A</b>${spread}<small>${esc(when)}</small>`;
+    const u = trend.series.r;
+    const spread = p[2] !== null && p[3] !== p[2] ? `<small>min ${p[2].toFixed(u.dp)} · max ${p[3].toFixed(u.dp)}</small>` : '';
+    tip.innerHTML = `<b>${p[1].toFixed(u.dp)} ${u.unit}</b>${spread}<small>${esc(when)}</small>`;
     tip.style.display = 'block';
     const x = trend.geom.X(p[0]), tw = tip.offsetWidth;
     tip.style.left = `${Math.max(8, x + 14 + tw > g.W - 8 ? x - 14 - tw : x + 14) + 12}px`;
@@ -1424,6 +1558,8 @@
   refreshVesselName();
   refreshOnce('initial-load').then(loaded => {
     if (!loaded) return;
+    refreshMonitoring();
+    setInterval(refreshMonitoring, 5000);
     if (circuits.length) {
       connectSocket();
       sendSubscriptions();

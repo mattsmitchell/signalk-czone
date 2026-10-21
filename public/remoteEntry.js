@@ -482,12 +482,23 @@ var signalk_czone = (function () {
       ),
 
       React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
+        React.createElement('strong', null, 'Monitoring'),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Off by default. Adds a Monitoring tab to the webapp: every meter, tank, temperature, humidity and pressure sender in the ZCF, live, with DC watts (solar, alternators, wind). A temperature named after a circuit ("Freezer Temperature") shows beside the circuit and in its Victron switch pane label. Meter readings are published to Signal K either way.'),
+        React.createElement('div', { style: { marginTop: 9 } },
+          React.createElement('label', null,
+            React.createElement('input', { type: 'checkbox', checked: configuration.monitoringEnabled === true, disabled: busy, onChange: function (e) { persist({ monitoringEnabled: e.target.checked }) } }),
+            ' Show the Monitoring tab'
+          )
+        )
+      ),
+
+      React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
         React.createElement('strong', null, 'Trends'),
-        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Off by default. Stores each circuit\'s current every 10 seconds as plain CSV files, for the trend charts in the webapp (the arrow at the end of a circuit row). Not needed if the data already goes to a database such as InfluxDB.'),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Off by default. Stores each circuit\'s current and every monitored value every 10 seconds as plain CSV files, for the trend charts in the webapp (the arrow at the end of a circuit row, or a value on the Monitoring tab). Not needed if the data already goes to a database such as InfluxDB.'),
         React.createElement('div', { style: { marginTop: 9 } },
           React.createElement('label', null,
             React.createElement('input', { type: 'checkbox', checked: configuration.trendsEnabled === true, disabled: busy, onChange: function (e) { persist({ trendsEnabled: e.target.checked }) } }),
-            ' Record circuit current trends'
+            ' Record trends'
           )
         ),
         React.createElement('div', { id: 'czone-trend-status', style: { marginTop: 6, fontSize: 12 } }, trendSummary()),
