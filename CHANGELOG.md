@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-beta.19
+
+- Adds opt-in Monitoring for meters, tanks, temperatures, humidity, pressure and switch inputs, with expanded trends and circuit temperature chips (#36, thanks @superstar76).
+- Fixes meter-table loading, fast-packet monitoring and unavailable-value handling; supports direct monitoring reads on Victron GX.
+- Keeps Monitoring search within the tab and restores circuit search wording when returning to circuits (#37).
+
 ## 0.3.0-beta.18
 
 - Adds in-page Signal K sign-in for browser and installed home-screen apps, without leaving CZone (#35, thanks @superstar76).
