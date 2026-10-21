@@ -88,3 +88,34 @@ run('monitor.trendsEnabled = false')
 assert(run("tempChip({ slug: 'Freezer' })").startsWith('<span class="temp-chip"'))
 
 console.log('Webapp monitoring tests passed')
+
+// Exercise the actual search input and view changes, rather than setting query directly.
+context.view = 'monitor'
+context.category = null
+context.currentList = () => []
+context.icon = () => ''
+context.render = () => run('renderCircuits()')
+context.refreshMonitoring = () => {}
+context.monitorLastFetch = 0
+vm.runInContext(section('  function setView(', '  window.setView =') +
+  section('  function renderCircuits()', '  // A temperature paired'), context)
+let searchInput
+el('#search').addEventListener = (type, handler) => { searchInput = handler }
+vm.runInContext(html.split('\n').find(line => line.includes("document.querySelector('#search').addEventListener('input'")), context)
+run('renderCircuits()')
+assert.strictEqual(el('#search').placeholder, 'Search monitoring…')
+searchInput({ target: { value: 'cabin' } })
+assert.strictEqual(context.view, 'monitor')
+assert(el('#circuits').innerHTML.includes('Cabin Temperature'))
+assert(!el('#circuits').innerHTML.includes('House Battery'))
+searchInput({ target: { value: '' } })
+assert.strictEqual(context.view, 'monitor')
+run("setView('all')")
+assert.strictEqual(el('#search').placeholder, 'Search circuits…')
+searchInput({ target: { value: 'lights' } })
+assert.strictEqual(context.view, 'search')
+searchInput({ target: { value: '' } })
+assert.strictEqual(context.view, 'all')
+run("setView('monitor'); setCategory('DC')")
+assert.strictEqual(el('#search').placeholder, 'Search circuits…')
+console.log('Monitoring/circuit search navigation tests passed')

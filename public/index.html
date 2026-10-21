@@ -561,6 +561,7 @@
   }
 
   function renderCircuits() {
+    document.querySelector('#search').placeholder = view === 'monitor' && !category ? 'Search monitoring…' : 'Search circuits…';
     if (view === 'monitor' && !category) { renderMonitoring(); return; }
     const list = currentList();
     const title = category || ({all:'All Circuits',inuse:'In Use',favorites:'Favorites',ac:'AC Circuits',dc:'DC Circuits',search:'Search Results'}[view] || 'Circuits');
@@ -1507,7 +1508,7 @@
 
   function render() { renderNav(); renderCategories(); renderCircuits(); renderStats(); renderModes(); renderHero(); }
 
-  document.querySelector('#search').addEventListener('input', e => { query=e.target.value.trim(); view=query?'search':'all'; category=null; render(); });
+  document.querySelector('#search').addEventListener('input', e => { query=e.target.value.trim(); if (view !== 'monitor') view=query?'search':'all'; category=null; render(); });
   document.querySelector('#sort').addEventListener('change', e => { sort=e.target.value; renderCircuits(); });
 
   function updateSocketIndicator(text, ok) {
