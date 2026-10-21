@@ -202,7 +202,7 @@ Off by default: tick **Show the Monitoring tab** in the configuration panel to t
 | Environment | pressure senders | 130314 |
 | Inputs | switch inputs | (see Switch inputs) |
 
-A reading is matched by the NMEA 2000 instance set in the Configuration Tool, and the temperature or pressure source or tank fluid type. Each row says **LIVE**, or **NOT ON BUS** with the instance nothing is sending ("Nothing is sending instance 3 on NMEA 2000"), which is the number to set on the sending device. NMEA 2000 "not available" values are never shown as readings.
+A reading is matched by the NMEA 2000 instance set in the Configuration Tool, and the temperature or pressure source or tank fluid type. Each reading is **LIVE** while it has updated in the last 3 minutes. After that its last value stays, dimmed, with its age ("Charge · 5 min ago"), counting up; a row with nothing live says when it was last updated. A row that has never had a reading says **No data received** with its instance ("No data received · instance 3"), which is the number to set on the sending device. NMEA 2000 "not available" values are never shown as readings.
 
 **Which device.** Instances are not unique across devices: a Victron charger sends a battery status on the battery's instance as well as the shunt, and a wired meter can share an instance with another device. So each reading comes from one device:
 
@@ -211,7 +211,7 @@ A reading is matched by the NMEA 2000 instance set in the Configuration Tool, an
 3. A third-party DC meter: where devices say what they are (127506), only one of the meter's DC type is used, and for a battery one that reports a state of charge beats one that does not, so a shunt beats a charger. Ties go to the lowest address, so the choice is the same after a restart.
 4. Otherwise the first device heard keeps the reading until it has been quiet for two minutes.
 
-Values are published under `electrical.czone.monitoring.<name>.*`, as the meters already were: `voltage`, `current`, `power`, `capacity.stateOfCharge`, `frequency`, `temperature`, `relativeHumidity`, `pressure`, `currentLevel`, `currentVolume`, `capacity`. **DC power** (watts) is volts × amps of the same 127508 message, so solar, alternator and wind output can be seen and trended.
+Values are published under `electrical.czone.monitoring.<name>.*`, as the meters already were: `voltage`, `current`, `power`, `capacity.stateOfCharge`, `frequency`, `temperature`, `relativeHumidity`, `pressure`, `currentLevel`, `currentVolume`, `capacity`. **DC power** (watts) is volts × amps of the same 127508 message, so solar, alternator and wind output can be seen and trended. Its trend goes back as far as the meter's volts and amps: before power was first recorded, the chart works it out from them (the latest of each at that time; for long periods, from their averages, with the band from their ranges). Where power itself was recorded, those exact figures are used.
 
 **Senders bridged onto NMEA 2000 by the same machine.** Signal K does not pass a plugin its own transmissions, or a GX's:
 

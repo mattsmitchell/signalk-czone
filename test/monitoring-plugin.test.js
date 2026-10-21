@@ -67,7 +67,7 @@ function startPlugin (zcfName, settings = {}, appExtra = {}) {
   const live = () => get('/monitoring/live')
   const item = name => live().items.find(i => i.name === name)
   const values = name => Object.fromEntries(item(name).readings.map(r => [r.field, Math.round(r.value * 1000) / 1000]))
-  return { plugin, raw, line, jsonOut, published, live, item, values, get, listeners }
+  return { plugin, raw, line, jsonOut, published, live, item, values, get, listeners, trendDir: path.join(dir, 'trends') }
 }
 
 const M = 'electrical.czone.monitoring.'
@@ -127,10 +127,17 @@ const M = 'electrical.czone.monitoring.'
     assert.deepStrictEqual(Object.keys(l.temperatures), ['Fridge'])
     assert.strictEqual(l.temperatures.Fridge.kelvin, 278.15)
     // A reading older than five minutes is no longer the circuit's temperature,
-    // and after two minutes the sender is not live.
+    // and after three minutes the sender is not live; its last value stays,
+    // with its age, for the page to show dimmed.
     const realNow = Date.now
-    Date.now = () => realNow() + 121e3
-    assert.strictEqual(t.item('Fridge Temperature').live, false)
+    Date.now = () => realNow() + 179e3
+    assert.strictEqual(t.item('Fridge Temperature').live, true)
+    Date.now = () => realNow() + 181e3
+    const fridge = t.item('Fridge Temperature')
+    assert.strictEqual(fridge.live, false)
+    assert.strictEqual(fridge.readings[0].value, 278.15)
+    assert.strictEqual(fridge.readings[0].live, false)
+    assert(fridge.readings[0].ageMs >= 181e3 && fridge.readings[0].ageMs < 190e3, String(fridge.readings[0].ageMs))
     assert(t.live().temperatures.Fridge)
     Date.now = () => realNow() + 301e3
     assert.strictEqual(t.live().temperatures.Fridge, undefined)
@@ -173,6 +180,28 @@ const M = 'electrical.czone.monitoring.'
     const trend = t.get('/trend', { path: `${M}Ruuvi_Tag.temperature`, range: '1h' })
     assert.strictEqual(trend.latest && trend.latest.value, 295.15, JSON.stringify(trend))
     assert.strictEqual(t.get('/trend', { path: `${M}Victron_Shunt.power`, range: '1h' }).latest.value, -33.2)
+    // Power history before power was recorded: the shunt's volts and amps were
+    // already in the trend folder (as an earlier version would have left them).
+    {
+      const { sanitizePath } = require('../lib/trends/storage')
+      const now = Date.now()
+      const day = ms => new Date(ms).toISOString().slice(0, 10)
+      const write = (series, rows) => {
+        const d = path.join(t.trendDir, sanitizePath(series))
+        fs.mkdirSync(d, { recursive: true })
+        for (const [ts, v] of rows) fs.appendFileSync(path.join(d, `${day(ts)}.csv`), `${ts},${v}\n`)
+      }
+      const h = now - 3600e3
+      write(`${M}Victron_Shunt.voltage`, [[h, 13.2], [h + 600e3, 13.4]])
+      write(`${M}Victron_Shunt.current`, [[h + 2000, -5], [h + 600e3 + 2000, 10]])
+      const p = t.get('/trend', { path: `${M}Victron_Shunt.power`, range: '24h' })
+      assert.deepStrictEqual(p.data.slice(0, 3).map(r => r[1]), [-66, -67, 134], JSON.stringify(p.data))
+      assert(p.computedUntil >= h && p.computedUntil < now)
+      // Volts and amps themselves are read as before.
+      assert.strictEqual(t.get('/trend', { path: `${M}Victron_Shunt.voltage`, range: '24h' }).computedUntil, undefined)
+      // Not a DC meter's power: as before.
+      assert.strictEqual(t.get('/trend', { path: `${M}Power_In.power`, range: '24h' }).computedUntil, undefined)
+    }
     t.plugin.stop()
   }
 

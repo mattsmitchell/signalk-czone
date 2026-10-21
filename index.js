@@ -10,6 +10,7 @@ const monitoring = require('./lib/monitoring')
 const sensors = require('./lib/sensors')
 const { createCandump, PGNS: CANDUMP_PGNS } = require('./lib/candump')
 const { createSourcePicker } = require('./lib/sources')
+const { powerHistory } = require('./lib/power-history')
 const { createTrends } = require('./lib/trends')
 const signalk = require('./lib/signalk')
 const confirmOffLib = require('./lib/confirm-off')
@@ -24,7 +25,9 @@ const CZONE_CONFIG_BLOCK_SIZE = 200
 const CZONE_CONFIG_READ_TIMEOUT_MS = 45000
 const PLUGIN_ID = 'signalk-czone'
 // A monitored value older than this is no longer live (NOT ON BUS).
-const MONITOR_LIVE_MS = 120e3
+// A reading is LIVE while it has updated within this long; after that it is
+// shown dimmed with its age ("Updated 5 min ago").
+const MONITOR_LIVE_MS = 180e3
 // A circuit's temperature is dropped after this long without a reading.
 const TEMPERATURE_STALE_MS = 300e3
 const MONITOR_GROUPS = { battery: 'Batteries', solar: 'Solar', alternator: 'Alternators', converter: 'Converters', wind: 'Wind Generators' }
@@ -1027,7 +1030,7 @@ module.exports = function (app) {
     const now = Date.now()
     const reading = (path, field) => {
       const v = monitorValues.get(path)
-      return { field, path, value: v ? v.value : null, at: v ? new Date(v.at).toISOString() : null, live: !!v && now - v.at < MONITOR_LIVE_MS }
+      return { field, path, value: v ? v.value : null, at: v ? new Date(v.at).toISOString() : null, ageMs: v ? now - v.at : null, live: !!v && now - v.at < MONITOR_LIVE_MS }
     }
     const item = (group, kind, x, fields) => {
       const readings = fields.filter(f => x.signalK[f]).map(f => reading(x.signalK[f], f))
@@ -1727,7 +1730,13 @@ module.exports = function (app) {
         if (!trends) return res.json({ available: false, reason: 'not_started', data: [] })
         const q = req.query
         const custom = q.from !== undefined && q.to !== undefined
-        res.json(trends.read(skPath, custom ? { from: Number(q.from), to: Number(q.to) } : q.range))
+        const range = custom ? { from: Number(q.from), to: Number(q.to) } : q.range
+        // A DC meter's power: before it was first recorded, worked out from
+        // the meter's recorded volts and amps (lib/power-history).
+        const m = /^electrical\.czone\.monitoring\.(.+)\.power$/.exec(skPath)
+        const meter = m && monitoringRuntime ? monitoringRuntime.meters.find(x => x.slug === m[1] && x.type === 'DC') : null
+        if (meter) return res.json(powerHistory(trends.read(skPath, range), trends.read(meter.signalK.voltage, range), trends.read(meter.signalK.current, range)))
+        res.json(trends.read(skPath, range))
       })
 
       router.get('/trend/status', (_req, res) => {
