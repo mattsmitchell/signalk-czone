@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-beta.20
+
+- Shows individual monitoring readings as live for three minutes, then keeps their last values dimmed with their age; distinguishes stale rows from no data (#38, thanks @superstar76).
+- Reconstructs earlier DC power trends from recorded voltage and current while preserving directly recorded power history.
+
 ## 0.3.0-beta.19
 
 - Adds opt-in Monitoring for meters, tanks, temperatures, humidity, pressure and switch inputs, with expanded trends and circuit temperature chips (#36, thanks @superstar76).
