@@ -118,6 +118,9 @@
     .mon-val.on { border-color:rgba(46,213,115,.55); background:rgba(46,213,115,.12); }
     .mon-live { margin-left:10px; font-size:10px; font-weight:700; letter-spacing:.6px; color:#2ed573; white-space:nowrap; }
     .mon-row.off .mon-live { color:#ffb84d; }
+    /* A reading that has not updated for 3 minutes: dimmed, with its age. */
+    .mon-val.stale { opacity:.55; }
+    .mon-val.stale small { color:#ffb84d; }
     .temp-chip { display:inline-block; margin-left:8px; padding:1px 7px; border-radius:9px; border:1px solid rgba(24,213,232,.35); background:rgba(24,213,232,.08); color:var(--cyan); font:inherit; font-size:11px; font-weight:600; vertical-align:1px; }
     button.temp-chip { cursor:pointer; }
     @media (max-width: 600px) {
@@ -589,12 +592,26 @@
     showTrend({ path, title: decodeURIComponent(name), r: readingFor(item, field) });
   };
 
+  // How long ago a reading arrived: its age when fetched (by the server's
+  // clock, so a tablet or plotter with the wrong time does not matter), plus
+  // the time since. It counts up as the tab refreshes.
+  function monitorAge(ageMs) {
+    const ms = ageMs + (monitor.fetchedAt ? Date.now() - monitor.fetchedAt : 0);
+    const min = Math.floor(ms / 60000);
+    if (min < 60) return `${Math.max(1, min)} min ago`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h} h ${min % 60} min ago`;
+    return `${Math.floor(h / 24)} d ago`;
+  }
+
   function monitorValue(item, r) {
     const u = readingFor(item, r.field);
-    const box = `<b>${u.f(r.value).toFixed(u.dp)}</b><i>${u.unit}</i><small>${u.label}</small>`;
+    const stale = r.live === false && Number.isFinite(r.ageMs);
+    const box = `<b>${u.f(r.value).toFixed(u.dp)}</b><i>${u.unit}</i><small>${stale ? `${u.label} · ${monitorAge(r.ageMs)}` : u.label}</small>`;
+    const cls = `mon-val${stale ? ' stale' : ''}`;
     return monitor.trendsEnabled && r.field !== 'capacity'
-      ? `<button type="button" class="mon-val" title="${u.label} trend" onclick="openSeries('${encodeURIComponent(r.path)}','${encodeURIComponent(item.name)}','${r.field}')">${box}</button>`
-      : `<div class="mon-val">${box}</div>`;
+      ? `<button type="button" class="${cls}" title="${u.label} trend" onclick="openSeries('${encodeURIComponent(r.path)}','${encodeURIComponent(item.name)}','${r.field}')">${box}</button>`
+      : `<div class="${cls}">${box}</div>`;
   }
 
   function monitorRow(item) {
@@ -603,11 +620,18 @@
       values = item.state === null ? '' : `<div class="mon-val ${item.state ? 'on' : ''}"><b>${item.state ? 'ON' : 'OFF'}</b><small>Switch input</small></div>`;
       sub = item.decoded === false ? 'This kind of module is not read yet' : item.live ? (item.since ? `Since ${new Date(item.since).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}` : 'Switch input') : 'No status from its module yet';
     } else {
-      values = item.live ? item.readings.map(r => monitorValue(item, r)).join('') : '';
-      if (item.live && item.capacity) values += `<div class="mon-val"><b>${Math.round(item.capacity * 1000)}</b><i>L</i><small>Capacity</small></div>`;
-      sub = item.live ? `Instance ${item.instance}${item.thirdParty ? ' · third-party' : ''}` : `Nothing is sending instance ${item.instance} on NMEA 2000`;
+      // LIVE while a reading updated in the last 3 minutes; older readings
+      // dimmed with their age; "No data received" when nothing has arrived.
+      values = item.readings.map(r => monitorValue(item, r)).join('');
+      if (item.readings.length && item.capacity) values += `<div class="mon-val${item.live ? '' : ' stale'}"><b>${Math.round(item.capacity * 1000)}</b><i>L</i><small>Capacity</small></div>`;
+      const ages = item.readings.map(r => r.ageMs).filter(Number.isFinite);
+      const where = `instance ${item.instance}${item.thirdParty ? ' · third-party' : ''}`;
+      sub = item.live ? `Instance ${item.instance}${item.thirdParty ? ' · third-party' : ''}`
+        : ages.length ? `Updated ${monitorAge(Math.min.apply(null, ages))} · ${where}`
+        : `No data received · ${where}`;
     }
-    return `<div class="mon-row ${item.live ? '' : 'off'}"><div class="circuit-name"><strong>${esc(item.name)}</strong><small>${esc(sub)}</small></div><div class="mon-values">${values}</div><span class="mon-live">${item.live ? 'LIVE' : 'NOT ON BUS'}</span></div>`;
+    const badge = item.live ? 'LIVE' : (item.kind !== 'input' && item.readings.length ? 'NOT LIVE' : 'NO DATA');
+    return `<div class="mon-row ${item.live ? '' : 'off'}"><div class="circuit-name"><strong>${esc(item.name)}</strong><small>${esc(sub)}</small></div><div class="mon-values">${values}</div><span class="mon-live">${badge}</span></div>`;
   }
 
   function renderMonitoring() {
@@ -637,7 +661,7 @@
       const data = await r.json();
       const chips = () => JSON.stringify(Object.keys(monitor.temperatures).map(k => [k, monitor.temperatures[k].kelvin.toFixed(1)]).concat([monitor.items.length, monitor.trendsEnabled]));
       const before = chips();
-      monitor = { items: Array.isArray(data.items) ? data.items : [], temperatures: data.temperatures || {}, trendsEnabled: data.trendsEnabled === true };
+      monitor = { items: Array.isArray(data.items) ? data.items : [], temperatures: data.temperatures || {}, trendsEnabled: data.trendsEnabled === true, fetchedAt: Date.now() };
       if (view === 'monitor' && !category) { renderMonitoring(); renderNav(); }
       else if (chips() !== before) render(); // only when a chip or the tab changed: a redraw would cut short a slider being moved
     } catch (_) { /* the next round tries again */ }

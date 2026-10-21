@@ -58,7 +58,7 @@ assert(page.includes('<b>87</b><i>%</i><small>Charge</small>'))
 assert(page.includes('<b>22.0</b><i>°C</i>') && page.includes('<b>55</b><i>%</i><small>Humidity</small>'))
 assert(page.includes('<b>1013</b><i>hPa</i>'))
 assert(page.includes('<b>400</b><i>L</i><small>Capacity</small>'))
-assert(page.includes('Nothing is sending instance 2 on NMEA 2000') && page.includes('NOT ON BUS'))
+assert(page.includes('No data received · instance 2') && page.includes('>NO DATA<'))
 assert(page.includes('Engine Room &lt;Temp&gt;'), 'names escaped')
 assert(page.includes('<div class="mon-val on"><b>ON</b>'))
 assert(page.includes('Instance 3 · third-party'))
@@ -119,3 +119,41 @@ assert.strictEqual(context.view, 'all')
 run("setView('monitor'); setCategory('DC')")
 assert.strictEqual(el('#search').placeholder, 'Search circuits…')
 console.log('Monitoring/circuit search navigation tests passed')
+
+// Stale readings (Matt's review): LIVE while updated in the last 3 minutes;
+// an older reading dimmed with its age, counting up; "No data received" when
+// nothing has arrived.
+set({
+  trendsEnabled: false, temperatures: {}, fetchedAt: Date.now(),
+  items: [
+    // Volts keep coming, state of charge stopped 5 minutes ago.
+    { group: 'Batteries', kind: 'dc', name: 'House Battery', instance: 0, live: true, readings: [
+      { field: 'voltage', path: `${M}House_Battery.voltage`, value: 13.2, live: true, ageMs: 2000 },
+      { field: 'stateOfCharge', path: `${M}House_Battery.capacity.stateOfCharge`, value: 0.87, live: false, ageMs: 5 * 60e3 }] },
+    // Nothing for 7 minutes.
+    { group: 'Tanks', kind: 'tank', name: 'Port Water Tank', instance: 2, live: false, capacity: 0.4, readings: [
+      { field: 'currentLevel', path: `${M}Port_Water_Tank.currentLevel`, value: 0.5, live: false, ageMs: 7 * 60e3 }] },
+    // Two hours and five minutes.
+    { group: 'Solar', kind: 'dc', name: 'Solar', instance: 1, live: false, readings: [
+      { field: 'voltage', path: `${M}Solar.voltage`, value: 13.6, live: false, ageMs: 125 * 60e3 }] }
+  ]
+})
+run('renderMonitoring()')
+{
+  const html = el('#circuits').innerHTML
+  const row = name => html.split('<div class="mon-row').find(r => r.includes(`<strong>${name}</strong>`))
+  assert(row('House Battery').includes('<div class="mon-val"><b>13.20</b>'), 'the live reading is as it was')
+  assert(row('House Battery').includes('<div class="mon-val stale"><b>87</b><i>%</i><small>Charge · 5 min ago</small>'), 'the stopped one is dimmed, with its age')
+  assert(row('House Battery').includes('>LIVE<'))
+  assert(row('Port Water Tank').startsWith(' off'))
+  assert(row('Port Water Tank').includes('Updated 7 min ago · instance 2'))
+  assert(row('Port Water Tank').includes('<div class="mon-val stale"><b>50</b>') && row('Port Water Tank').includes('<div class="mon-val stale"><b>400</b><i>L</i>'))
+  assert(row('Port Water Tank').includes('>NOT LIVE<'))
+  assert(row('Solar').includes('Updated 2 h 5 min ago'))
+}
+// It counts up as time passes (the age is the server's, plus the time since).
+run('monitor.fetchedAt = Date.now() - 2 * 60e3; renderMonitoring()')
+assert(el('#circuits').innerHTML.includes('Charge · 7 min ago'))
+assert(el('#circuits').innerHTML.includes('Updated 9 min ago · instance 2'))
+assert.strictEqual(run('monitorAge(3 * 86400e3)'), '3 d ago')
+console.log('Stale monitoring readings tests passed')
