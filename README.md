@@ -548,3 +548,7 @@ Certificate installation and app installation menus vary by device and browser.
 
 The app still needs a live Signal K connection. No offline caching or service
 worker is installed, and installing it does not grant circuit-write permission.
+
+### Circuit favorites
+
+Circuits marked Favorites in the loaded ZCF appear as favorites by default. The star buttons customize favorites for the current browser: you can add other circuits or hide a ZCF favorite. These choices survive browser and server restarts and apply when the ZCF is reloaded or updated. They are stored in browser site data, do not change the ZCF, and are independent on each browser/device. Clearing site data restores the ZCF defaults.

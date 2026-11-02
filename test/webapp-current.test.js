@@ -15,7 +15,7 @@ const context = vm.createContext({
   document: { querySelector: () => toggle },
   pending: new Map(), favorites: new Set(), status: {},
   circuits: [{ name: 'Galley Lights', slug: 'Galley_Lights', module: 20, channel: 1, state: { state: 'ON' } }],
-  nameKey: c => c.name, circuitBySlug: slug => context.circuits.find(c => c.slug === slug),
+  isFavorite: () => false, nameKey: c => c.name, circuitBySlug: slug => context.circuits.find(c => c.slug === slug),
   stateOf: c => c.state.state === 'ON', percentOf: c => c.state.percent,
   categoryData: () => ({ master: [] }), subCategoryList: () => [],
   askMark: () => '', tempChip: () => '', esc: s => s
