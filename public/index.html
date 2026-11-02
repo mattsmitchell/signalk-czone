@@ -503,6 +503,10 @@
   const favoritesKey = 'signalk-czone-circuits:favorites';
   let favorites = new Set(JSON.parse(localStorage.getItem(favoritesKey) || '[]'));
 
+  // ZCF favorites are defaults; browser choices can add or hide them locally.
+  const hiddenFavoritesKey = `${favoritesKey}:hidden`;
+  let hiddenFavorites = new Set(JSON.parse(localStorage.getItem(hiddenFavoritesKey) || '[]'));
+
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const nameKey = c => c.slug || c.name;
   const stateOf = c => c.state && c.state.state === 'ON';
@@ -513,6 +517,7 @@
     return current != null && current > 0 ? `${current.toFixed(1)} A` : null;
   };
   const categoryData = c => c.categories || { master: [], sub: [], userDefined: [] };
+  const isFavorite = c => !hiddenFavorites.has(nameKey(c)) && (favorites.has(nameKey(c)) || (categoryData(c).master || []).includes('Favorites'));
   const allCategories = c => [...(categoryData(c).master || []), ...(categoryData(c).sub || []), ...(categoryData(c).userDefined || [])];
   const catList = () => {
     const assigned = new Set(circuits.flatMap(allCategories).filter(c => !topLevelCategories.has(c)));
@@ -527,14 +532,17 @@
   const icon = c => MFD ? mfdIcon(c) : (categoryIcons[c] || '•');
   const color = c => categoryColors[c] || '#4bb5ff';
 
-  function saveFavorites() { localStorage.setItem(favoritesKey, JSON.stringify([...favorites])); }
+  function saveFavorites() {
+    localStorage.setItem(favoritesKey, JSON.stringify([...favorites]));
+    localStorage.setItem(hiddenFavoritesKey, JSON.stringify([...hiddenFavorites]));
+  }
   function setView(v) { view=v; category=null; render(); if (v === 'monitor') { monitorLastFetch = 0; refreshMonitoring(); } }
   function setCategory(c) { category=c; view='category'; render(); }
   window.setView = setView; window.setCategory = setCategory;
 
   function renderNav() {
     const items = [
-      ['all','⌂','All Circuits',circuits.length], ['inuse','●','In Use',activeCount()], ['favorites','☆','Favorites',circuits.filter(c=>favorites.has(nameKey(c))).length],
+      ['all','⌂','All Circuits',circuits.length], ['inuse','●','In Use',activeCount()], ['favorites','☆','Favorites',circuits.filter(isFavorite).length],
       ['ac','♆','AC',masterCount('AC')], ['dc','▣','DC',masterCount('DC')]
     ];
     if (monitor.items.length) items.push(['monitor','◔','Monitoring',monitor.items.length]);
@@ -552,7 +560,7 @@
     let list = circuits.filter(c => {
       if (c.showInCircuitList === false) return false;
       if (view==='inuse' && !stateOf(c)) return false;
-      if (view==='favorites' && !favorites.has(nameKey(c))) return false;
+      if (view==='favorites' && !isFavorite(c)) return false;
       if (view==='ac' && !(categoryData(c).master || []).includes('AC')) return false;
       if (view==='dc' && !(categoryData(c).master || []).includes('DC')) return false;
       if (category && !allCategories(c).includes(category)) return false;
@@ -676,7 +684,7 @@
   }
 
   function circuitRow(c) {
-    const on = stateOf(c), pct = percentOf(c), current = currentLabel(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = favorites.has(nameKey(c));
+    const on = stateOf(c), pct = percentOf(c), current = currentLabel(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = isFavorite(c);
     const p = pending.get(nameKey(c));
     const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" role="img" tabindex="0" style="--cat:${color(x)}" title="${esc(x)}" aria-label="${esc(x)} category">${icon(x)}</span>`).join('');
     const disabled = p && p.kind === 'state';
@@ -1084,7 +1092,19 @@
     }
     putSignalK(signalKPath(c, 'brightness'), requested / 100, c, 'brightness', requested, previous);
   };
-  window.toggleFavorite = key => { favorites.has(key) ? favorites.delete(key) : favorites.add(key); saveFavorites(); render(); };
+  window.toggleFavorite = key => {
+    const circuit = circuits.find(c => nameKey(c) === key);
+    if (!circuit) return;
+    if (isFavorite(circuit)) {
+      favorites.delete(key);
+      hiddenFavorites.add(key);
+    } else {
+      hiddenFavorites.delete(key);
+      favorites.add(key);
+    }
+    saveFavorites();
+    render();
+  };
 
   // ---- Trends ---------------------------------------------------------------
   // The arrow at the end of a row opens that circuit's current over time, at
@@ -1399,7 +1419,7 @@
   }
 
   function renderStats() {
-    const on=activeCount(), total=circuits.length, fav=circuits.filter(c=>favorites.has(nameKey(c))).length;
+    const on=activeCount(), total=circuits.length, fav=circuits.filter(isFavorite).length;
     document.querySelector('#stats').innerHTML = `<div class="stat"><div class="stat-icon">⚡</div><div><strong>${total}</strong><span>Total Circuits</span></div></div><div class="stat"><div class="stat-icon">●</div><div><strong>${on}</strong><span>In Use</span></div></div><div class="stat"><div class="stat-icon">○</div><div><strong>${total-on}</strong><span>Off</span></div></div><div class="stat"><div class="stat-icon">★</div><div><strong>${fav}</strong><span>Favorites</span></div></div>`;
     const n2kReady = status.nmeaReady === true;
     const readyColor = n2kReady ? '#64e4aa' : '#ffcc77';

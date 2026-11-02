@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0-beta.21
+
+- Includes ZCF Favorites in the circuit favorites list, counts and stars by default. Browser additions and removals persist as local overrides across reloads and ZCF updates.
+
 ## 0.3.0-beta.20
 
 - Shows individual monitoring readings as live for three minutes, then keeps their last values dimmed with their age; distinguishes stale rows from no data (#38, thanks @superstar76).
