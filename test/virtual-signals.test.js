@@ -68,6 +68,12 @@ assert.strictEqual(virtual.virtualSignalBit(circuit('Not virtual', 0x1c, 64), 0x
 assert.strictEqual(virtual.virtualSignalBit(hidden, 0x1c), null)
 assert.strictEqual(virtual.virtualSignalBit(physical, 0x1c), null)
 
+// A virtual signal in channel 32 occupies bit 31 (the fourth payload byte).
+const lastSignal = circuit('Last signal', 0x28, 63)
+const highBitFrame = nmea.parseRawLine('20:46:19.721 R 1CFF1507 27 99 28 9F 00 00 00 80')
+assert.deepStrictEqual(virtual.virtualSignalStates({ circuits: [lastSignal] },
+  virtual.decodeVirtualSignalStatus(highBitFrame)), [{ circuit: lastSignal, enabled: true }])
+
 // The existing PGN 65284 and other 65301 subtypes remain untouched.
 assert.strictEqual(read('20:46:19.721 R 1CFF0407 27 99 1C 9F 03 00 00 00'), null)
 assert.strictEqual(read(frame(0x1c, 0xbf, 3)), null)
