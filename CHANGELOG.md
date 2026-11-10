@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-beta.23
+
+- Decode CZone virtual signals (Configuration Tool channels 1–32) from proprietary PGN 65301 module-addressed status reports, creating Signal K state paths when observed.
+- Keep PGN 65284 physical-circuit status handling unchanged. Exclude DSB Inputs and ambiguous virtual-signal mappings.
+- Add Yacht Devices capture-derived ON/OFF regression tests, including concurrent signals and independent module addresses.
+
 ## 0.3.0-beta.22
 
 - Update the shared ZCF parser to `signalk-czone-zcf@0.1.0-beta.3` so single-output virtual circuits with an explicit All Display Interfaces control appear in the circuit list.
