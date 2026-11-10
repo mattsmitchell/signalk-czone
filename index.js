@@ -13,6 +13,7 @@ const { createSourcePicker } = require('./lib/sources')
 const { powerHistory } = require('./lib/power-history')
 const { createTrends } = require('./lib/trends')
 const signalk = require('./lib/signalk')
+const virtualSignals = require('./lib/virtual-signals')
 const confirmOffLib = require('./lib/confirm-off')
 const { createBridge, bridgeEntries } = require('./lib/bridge')
 const { createShellyDriver } = require('./lib/bridge/shelly')
@@ -1105,6 +1106,27 @@ module.exports = function (app) {
     }
   }
 
+  function decodeCzoneVirtualSignals (frame) {
+    const status = virtualSignals.decodeVirtualSignalStatus(frame)
+    if (!status || !mapping) return
+    for (const { circuit, enabled } of virtualSignals.virtualSignalStates(mapping, status)) {
+      const state = runtimeState.get(circuit.name)
+      if (state) {
+        state.statusObserved = true
+        state.state = enabled ? 'ON' : 'OFF'
+        state.lastObserved = {
+          state: state.state,
+          source: { src: frame.source, pgn: frame.pgn }
+        }
+      }
+      bridge.onCircuit(circuit.name, enabled)
+      const stateSource = signalk.nmea2000Source(frame.source, frame.pgn)
+      const statePath = signalk.statePath(circuit)
+      const published = publishCircuitDelta(circuit, statePath, enabled, stateSource)
+      if (published) log(`CZone VIRTUAL SIGNAL: ${circuit.name} -> ${enabled ? 'ON' : 'OFF'} (module=0x${status.module.toString(16).padStart(2, '0')} PGN ${frame.pgn})`)
+    }
+  }
+
   function handleRawFrame (line) {
     const frame = nmea.parseRawLine(line)
     if (!frame) return
@@ -1122,6 +1144,10 @@ module.exports = function (app) {
     if (frame.pgn === 65284) {
       decodeSwitchInputs(frame)
       decodeCzoneCircuitStatus(frame)
+      return
+    }
+    if (frame.pgn === virtualSignals.PGN) {
+      decodeCzoneVirtualSignals(frame)
       return
     }
     // 130822 (DC), 130817 (AC / Output Interface) and 130825 (Control X PLUS)
