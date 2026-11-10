@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0-beta.22
+
+- Update the shared ZCF parser to `signalk-czone-zcf@0.1.0-beta.3` so single-output virtual circuits with an explicit All Display Interfaces control appear in the circuit list.
+- Preserve existing visibility for physical circuits and the existing real-world ZCF fixtures; the parser release adds the November Sugar Shack virtual-switch regression fixture.
+
+
 ## 0.3.0-beta.21
 
 - Includes ZCF Favorites in the circuit favorites list, counts and stars by default. Browser additions and removals persist as local overrides across reloads and ZCF updates.
