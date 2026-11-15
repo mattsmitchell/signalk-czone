@@ -342,6 +342,27 @@ for (const custom of [false, true]) {
 // --- Switched off: nothing is kept, nothing is written, and it says why.
 {
   const dir = tmp('rec-')
+  // On a GX the status says so (the panel then offers the card setup file).
+  const card = tmp('mnt-')
+  const gxTrends = realCreateTrends({ isVenus: true, spaceProvider: ampleSpace, mountsProvider: () => `/dev/mmcblk1p1 ${card} vfat rw 0 0`, sampleSeconds: 60 })
+  assert.strictEqual(gxTrends.status().gx, true)
+  assert.strictEqual(gxTrends.status().sampleSeconds, 60)
+  const { sampleSecondsFrom, SAMPLE_SECONDS } = trendModule
+  assert.deepStrictEqual(SAMPLE_SECONDS, [5, 10, 15, 30, 60])
+  assert.deepStrictEqual([5, 10, 15, 30, 60, '15', 1, 120, null, NaN].map(sampleSecondsFrom), [5, 10, 15, 30, 60, 15, 10, 10, 10, 10])
+  const logs = []
+  const logged = createTrends({ directory: tmp('trend-'), sampleSeconds: 30, log: m => logs.push(m) })
+  logged.start(); logged.stop()
+  assert.ok(logs.some(m => /recording every 30 s/.test(m)), logs.join('\n'))
+  // The sampling timer runs at that rate (and the flush stays at a minute).
+  const realSetInterval = global.setInterval
+  const intervals = []
+  global.setInterval = (fn, ms) => { intervals.push(ms); return realSetInterval(() => {}, 1e9) }
+  try {
+    const timed = createTrends({ directory: tmp('trend-'), sampleSeconds: 15 })
+    timed.start(); timed.stop()
+  } finally { global.setInterval = realSetInterval }
+  assert.deepStrictEqual(intervals.slice(0, 2), [15000, 60000])
   const t = createTrends({ enabled: false, directory: dir })
   t.start()
   t.observe('a', 1)
@@ -387,7 +408,7 @@ function makePlugin (zcfBuffer) {
     return out
   }
   const frame = line => listeners.get('canboatjs:rawoutput')(line)
-  return { plugin, get, frame, deltas, dataDir: dir }
+  return { plugin, get, frame, deltas, dataDir: dir, routes }
 }
 
 // A PGN 130822 current/level table for one module page, as Fast Packet frames
@@ -414,6 +435,25 @@ async function main () {
   const trendDir = path.join(p.dataDir, 'trends')
   let status = p.get('/trend/status').body
   assert.deepStrictEqual([status.available, status.enabled, status.location, status.dir, status.trending], [true, true, 'data_dir', trendDir, 0])
+  // The sample rate: 10 s unless set; the GX flag (for the card setup file) off here.
+  assert.strictEqual(status.sampleSeconds, 10)
+  assert.strictEqual(status.gx, false)
+  for (const [setting, expected] of [[5, 5], [15, 15], [30, 30], [60, 60], ['30', 30], [7, 10], [0, 10], [undefined, 10], ['x', 10]]) {
+    const q = makePlugin(zcf)
+    q.plugin.start({ trendsEnabled: true, trendSampleSeconds: setting })
+    assert.strictEqual(q.get('/trend/status').body.sampleSeconds, expected, `trendSampleSeconds ${setting}`)
+    q.plugin.stop()
+  }
+  // The card setup file is offered as a download.
+  {
+    const headers = {}
+    let sent
+    p.routes.get('/trend/card-setup')({}, { setHeader: (k, v) => { headers[k] = v }, end: b => { sent = b } })
+    assert.strictEqual(headers['Content-Type'], 'application/gzip')
+    assert.strictEqual(headers['Content-Disposition'], 'attachment; filename="venus-data.tgz"')
+    assert.strictEqual(headers['Content-Length'], sent.length)
+    assert.ok(require('zlib').gunzipSync(sent).length > 1024)
+  }
 
   // Galley Lights is module 20, page 0, slot 1; Piano Light module 18, page 0,
   // slot 4. The table is repeated, as CZone does; the last value is 6.2 A.

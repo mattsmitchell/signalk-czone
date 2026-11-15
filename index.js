@@ -12,6 +12,7 @@ const { createCandump, PGNS: CANDUMP_PGNS } = require('./lib/candump')
 const { createSourcePicker } = require('./lib/sources')
 const { powerHistory } = require('./lib/power-history')
 const { createTrends } = require('./lib/trends')
+const { cardSetupArchive, CARD_SETUP_FILE } = require('./lib/trends/venus-card')
 const signalk = require('./lib/signalk')
 const virtualSignals = require('./lib/virtual-signals')
 const confirmOffLib = require('./lib/confirm-off')
@@ -1449,6 +1450,14 @@ module.exports = function (app) {
           default: '',
           description: 'Blank = automatic: a card or stick on a Victron GX, the plugin data folder elsewhere. On a GX, a custom folder must also be on a mounted card or stick.'
         },
+        trendSampleSeconds: {
+          type: 'number',
+          title: 'Record trends every',
+          enum: [5, 10, 15, 30, 60],
+          enumNames: ['5 seconds', '10 seconds', '15 seconds', '30 seconds', '1 minute'],
+          default: 10,
+          description: 'How often the latest values are recorded. A value is written only when it changes (and at least every 10 minutes), so a faster rate costs little space unless values change all the time.'
+        },
         trendRetentionDays: {
           type: 'number',
           title: 'Keep full-detail trend data for',
@@ -1587,6 +1596,7 @@ module.exports = function (app) {
         enabled: settings.trendsEnabled === true,
         directory: settings.trendDirectory,
         retentionDays: settings.trendRetentionDays,
+        sampleSeconds: settings.trendSampleSeconds,
         fallbackDir: configDir,
         log
       })
@@ -1763,6 +1773,17 @@ module.exports = function (app) {
         const meter = m && monitoringRuntime ? monitoringRuntime.meters.find(x => x.slug === m[1] && x.type === 'DC') : null
         if (meter) return res.json(powerHistory(trends.read(skPath, range), trends.read(meter.signalK.voltage, range), trends.read(meter.signalK.current, range)))
         res.json(trends.read(skPath, range))
+      })
+
+      // The card setup file for a Victron GX (lib/trends/venus-card.js): copied
+      // onto the card, it makes Venus OS open the card for Signal K at every
+      // boot, with no login to the GX.
+      router.get('/trend/card-setup', (_req, res) => {
+        const body = cardSetupArchive()
+        res.setHeader('Content-Type', 'application/gzip')
+        res.setHeader('Content-Disposition', `attachment; filename="${CARD_SETUP_FILE}"`)
+        res.setHeader('Content-Length', body.length)
+        res.end(body)
       })
 
       router.get('/trend/status', (_req, res) => {

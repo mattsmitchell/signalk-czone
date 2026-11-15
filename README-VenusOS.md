@@ -190,6 +190,16 @@ Automatic storage uses `/run/media/mmcblk0p1/signalk-czone/trends`. Current valu
 
 ---
 
+### Trends without a login: the card setup file
+
+The steps above open the card for Signal K over SSH. Venus OS also offers a way in without a login: at boot it unpacks `venus-data.tgz` from an SD card or USB stick into `/data` and runs `rc/post-hook.sh` from it (see "Hooks to install/run own code at boot" in Victron's root-access notes). The plugin builds that file:
+
+1. Tick **Record trends** in the configuration panel. On a GX, the panel offers the **card setup file** (`venus-data.tgz`); download it.
+2. Copy it to the top folder of a FAT32 SD card or USB stick of 16 GB or more.
+3. Put the card in the GX and restart the GX.
+
+At start-up Venus OS unpacks it: `/data/sdcard-rw.sh` opens every FAT card under `/run/media` or `/media` for Signal K, and the hook adds it to `/data/rc.local` (before any `exit 0`), so it runs at every boot. It goes by mount point, so it suits every Cerbo, whichever device the card is. The panel then shows where trends are recording. After that the file can be deleted from the card: the setup stays in `/data`. (The archive brings its own `/data/rc/post-hook.sh`; on a GX that already has one from something else, merge them by hand instead.)
+
 ### Real-Time Diagnostics
 To verify everything is parsing seamlessly or inspect incoming fast-packet JSON NMEA2000 frame streams directly on your Cerbo GX, stream your system logs utilizing this filter hook:
 ```bash
