@@ -72,7 +72,7 @@ To force the active ecosystem environment to scan, register, and spin up your ne
 
 These steps apply whether the plugin was installed through the Signal K App Store or manually. Trend recording is **off by default**. On a Victron GX it requires a writable SD card or USB stick; the plugin does not use internal flash for trend storage.
 
-Use a FAT32 SD card of 16 GB or more. Insert it into the Cerbo GX and run the following commands as `root` over SSH. The examples use the Cerbo SD card device `/dev/mmcblk0p1`, mounted at `/run/media/mmcblk0p1`. Verify these paths before proceeding; for a USB stick, substitute its device and mount point.
+Use a FAT32 SD card of 16 GB or more. Insert it into the Cerbo GX and run the following commands as `root` over SSH. The examples use the Cerbo GX SD card device `/dev/mmcblk0p1`, mounted at `/run/media/mmcblk0p1`. On the newer Cerbo whose `/etc/venus/machine` says `am62xx`, the card is `/dev/mmcblk1p1`, mounted at `/run/media/mmcblk1p1`: substitute those throughout. `grep media /proc/mounts` shows which. For a USB stick, substitute its device and mount point. (The plugin finds the card itself on either model, from the kernel's device type.)
 
 #### 1. Check the card and its permissions
 
