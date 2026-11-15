@@ -1095,7 +1095,7 @@ module.exports = function (app) {
     if (!decoded) return
     for (const input of switchInputs) {
       if (input.module !== decoded.module) continue
-      const on = inputs.inputState(input.moduleKind, decoded.bitmap, input.input, frame.pgn, input.wiring)
+      const on = inputs.inputState(input.moduleKind, decoded.bitmap, input.input, frame.pgn, input.wiring, decoded.variant)
       if (on === undefined) continue
       const entry = inputState.get(input.path)
       if (entry.state === on) continue

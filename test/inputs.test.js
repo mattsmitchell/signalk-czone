@@ -24,10 +24,37 @@ assert.strictEqual(inputs.decodeFrame(Buffer.from('2798021f0a000000', 'hex')), n
 assert.strictEqual(inputs.inputState(0x0d, 0x02, 0, 65284), true)
 assert.strictEqual(inputs.inputState(0x0d, 0x01, 0, 65284), false, 'even bit is not the input')
 assert.strictEqual(inputs.inputState(0x0d, 0x200, 4, 65308), true)
-// COI: 65308 only, input i (from 16) at bit 2(i-16)+1.
-assert.strictEqual(inputs.inputState(0x1f, 0x80, 19, 65308), true)
-assert.strictEqual(inputs.inputState(0x1f, 0x80, 19, 65284), undefined, 'a COI 65284 carries its outputs')
-assert.strictEqual(inputs.inputState(0x1f, 0xffffffff, 3, 65308), undefined, 'COI inputs are numbered from 16')
+// COI: 65308 variant 03 only; input i (from 16) at bit 2(i-16)+1 to
+// negative, 2(i-16) to positive.
+assert.strictEqual(inputs.inputState(0x1f, 0x80, 19, 65308, 'switchToNeg', 0x03), true)
+assert.strictEqual(inputs.inputState(0x1f, 0x80, 19, 65284, 'switchToNeg', 0x03), undefined, 'a COI 65284 carries its outputs')
+assert.strictEqual(inputs.inputState(0x1f, 0xffffffff, 3, 65308, 'switchToNeg', 0x03), undefined, 'COI inputs are numbered from 16')
+for (const variant of [0x00, 0x04, 0x05, undefined]) {
+  assert.strictEqual(inputs.inputState(0x1f, 0xffffffff, 19, 65308, 'switchToNeg', variant), undefined, `COI 65308 variant ${variant} is not the inputs`)
+}
+assert.strictEqual(inputs.inputState(0x1f, 1 << 6, 19, 65308, 'switchToPos', 0x03), true, 'to positive: the even bit')
+assert.strictEqual(inputs.inputState(0x1f, 1 << 7, 19, 65308, 'switchToPos', 0x03), false, 'to positive: the odd bit is not it')
+assert.strictEqual(inputs.inputState(0x1f, 1 << 7, 19, 65308, undefined, 0x03), true, 'wiring unknown: as before, the odd bit')
+// The Pad, 15 Nov 2026, 60 s on its CZone bus with nothing operated. COI-AFT
+// (module 04) every two seconds: variant 03 08 01 00 00, variant 04 all
+// zero, variant 05 02 00 00 00. Its grey-water valve was closed (the Cerbo's
+// own limit switches: open contact off, closed contact made) and the
+// watermaker stopped. COI-Helm (01): variant 03 08 00 00 00, variant 00 zero.
+{
+  const pad = { 16: 'switchToNeg', 17: 'switchToNeg', 18: 'switchToPos', 19: 'switchToPos', 20: 'switchToPos', 21: 'switchToPos', 22: 'switchToPos' }
+  const read = (hex, input) => {
+    const f = inputs.decodeFrame(Buffer.from(hex, 'hex'))
+    return inputs.inputState(0x1f, f.bitmap, input, 65308, pad[input], f.variant)
+  }
+  const v03 = '2799040308010000'
+  assert.deepStrictEqual([16, 17, 18, 19, 20, 21, 22].map(i => read(v03, i)), [false, true, false, false, true, false, false],
+    'Grey Water Dump Valve Close and Watermaker Stopped on, the rest off')
+  for (const other of ['2799040400000000', '2799040502000000']) {
+    assert.deepStrictEqual([16, 17, 20].map(i => read(other, i)), [undefined, undefined, undefined], `${other}: not the inputs`)
+  }
+  assert.strictEqual(read('2799010308000000', 17), true, 'COI-Helm: WM Valve to WM Tank (input 17, to negative)')
+  assert.strictEqual(read('2799010008000000', 17), undefined, 'COI-Helm variant 00 is not the inputs')
+}
 // Control X PLUS: 65284 only, bit i, or i+1 when it switches to negative.
 assert.strictEqual(inputs.inputState(0x36, 1 << 17, 17, 65284, 'switchToPos'), true)
 assert.strictEqual(inputs.inputState(0x36, 1 << 19, 18, 65284, 'switchToNeg'), true)
@@ -131,6 +158,31 @@ const P = 'electrical.czone.inputs.'
   // The COI's 65284 is its outputs: it must not move an input.
   t.send('18FF0406 27 99 1A 1F FF FF FF FF')
   assert.deepStrictEqual(t.taken(), [])
+  // Nor do its other 65308 variants (The Pad: they made inputs flick).
+  for (const variant of ['00', '04', '05']) t.send(`1CFF1C06 27 99 1C ${variant} 00 00 00 00`)
+  t.send('1CFF1C06 27 99 1C 05 FF FF FF FF')
+  assert.deepStrictEqual(t.taken(), [], 'other variants move nothing')
+  t.send('1CFF1C06 27 99 1C 03 08 00 00 00')
+  assert.deepStrictEqual(t.taken(), [], 'variant 03 unchanged: nothing new')
+  t.plugin.stop()
+}
+
+// Sel Citron: a COI (module 08) with inputs wired to positive (16 Anchor
+// Drag - AIS, 17 BMS Load Contactor Input (On)) and one to negative (18 BMS
+// Load Contactor Input (Off)). To positive is the even bit.
+{
+  const t = startPlugin('Sel-Citron-02.04.25.zcf')
+  t.send('1CFF1C08 27 99 08 03 00 00 00 00')
+  const first = new Map(t.taken())
+  assert.strictEqual(first.get(`${P}Anchor_Drag_AIS.state`), false)
+  t.send('1CFF1C08 27 99 08 03 01 00 00 00')
+  assert.deepStrictEqual(t.taken(), [[`${P}Anchor_Drag_AIS.state`, true]], 'input 16 to positive: bit 0')
+  t.send('1CFF1C08 27 99 08 03 05 00 00 00')
+  assert.deepStrictEqual(t.taken(), [[`${P}BMS_Load_Contactor_Input_On.state`, true]], 'input 17 to positive: bit 2')
+  t.send('1CFF1C08 27 99 08 03 25 00 00 00')
+  assert.deepStrictEqual(t.taken(), [[`${P}BMS_Load_Contactor_Input_Off.state`, true]], 'input 18 to negative: bit 5')
+  t.send('1CFF1C08 27 99 08 05 00 00 00 00')
+  assert.deepStrictEqual(t.taken(), [], 'another variant moves nothing')
   t.plugin.stop()
 }
 
