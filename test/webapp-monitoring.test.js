@@ -44,7 +44,7 @@ set({
     { group: 'Temperatures', kind: 'temperature', name: 'Engine Room <Temp>', instance: 2, live: false, readings: [] },
     { group: 'Tanks', kind: 'tank', name: 'Port Water Tank', instance: 2, live: true, capacity: 0.4, readings: [{ field: 'currentLevel', path: `${M}Port_Water_Tank.currentLevel`, value: 0.5 }] },
     { group: 'Environment', kind: 'pressure', source: 0, name: 'Atmospheric Pressure', instance: 100, live: true, readings: [{ field: 'pressure', path: `${M}Atmospheric_Pressure.pressure`, value: 101325 }] },
-    { group: 'Inputs', kind: 'input', name: 'Bilge Float', live: true, state: true, since: '2026-10-21T01:02:00.000Z', readings: [] }
+    { group: 'Inputs', kind: 'input', name: 'Bilge Float', path: 'electrical.czone.inputs.Bilge_Float.state', live: true, state: true, since: '2026-10-21T01:02:00.000Z', readings: [] }
   ]
 })
 run('renderMonitoring()')
@@ -79,6 +79,13 @@ assert.strictEqual(trends[0].path, `${M}Atmospheric_Pressure.pressure`)
 assert.strictEqual(trends[0].title, 'Atmospheric Pressure')
 assert.strictEqual(trends[0].r.unit, 'hPa')
 assert(!el('#circuits').innerHTML.includes("'capacity')"), 'capacity has no trend')
+// A switch input opens its on/off trend.
+const inputButton = el('#circuits').innerHTML.match(/<button type="button" class="mon-val on" title="On \/ off trend" onclick="(openInputTrend\([^"]*\))"><b>ON<\/b>/)
+assert(inputButton, 'switch input is a button')
+vm.runInContext(inputButton[1].replace(/&#39;/g, "'").replace(/^openInputTrend/, 'window.openInputTrend'), context)
+assert.strictEqual(trends[1].path, 'electrical.czone.inputs.Bilge_Float.state')
+assert.strictEqual(trends[1].title, 'Bilge Float')
+assert.strictEqual(trends[1].r.onOff, true)
 
 // The temperature chip beside a circuit.
 assert.strictEqual(run("tempChip({ slug: 'Fridge' })"), '')

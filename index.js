@@ -1112,6 +1112,15 @@ module.exports = function (app) {
       log(`CZone INPUT: ${input.name} ${on ? 'ON' : 'OFF'} (PGN ${frame.pgn} module=0x${decoded.module.toString(16).padStart(2, '0')} bitmap=0x${decoded.bitmap.toString(16).padStart(8, '0')})`)
       publishDelta(input.path, on)
     }
+    // Trends: each known input of this module as 1 / 0, on every message
+    // from it (so the series stays live); a change is stored at once.
+    if (trends) {
+      for (const input of switchInputs) {
+        if (input.module !== decoded.module) continue
+        const st = inputState.get(input.path)
+        if (st && typeof st.state === 'boolean') trends.observeState(input.path, st.state ? 1 : 0)
+      }
+    }
   }
 
   function decodeCzoneVirtualSignals (frame) {

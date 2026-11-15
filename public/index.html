@@ -594,6 +594,8 @@
   }
 
   const MONITOR_GROUPS = ['Batteries','Solar','Alternators','Converters','Wind Generators','DC','AC Power','Tanks','Temperatures','Environment','Inputs'];
+  // A switch input's trend: 1 while on, 0 while off.
+  window.openInputTrend = (path, name) => showTrend({ path: decodeURIComponent(path), title: decodeURIComponent(name), r: READING.state });
   window.openSeries = (path, name, field) => {
     path = decodeURIComponent(path);
     const item = monitor.items.find(i => i.readings.some(r => r.path === path));
@@ -625,7 +627,10 @@
   function monitorRow(item) {
     let values = '', sub;
     if (item.kind === 'input') {
-      values = item.state === null ? '' : `<div class="mon-val ${item.state ? 'on' : ''}"><b>${item.state ? 'ON' : 'OFF'}</b><small>Switch input</small></div>`;
+      const box = `<b>${item.state ? 'ON' : 'OFF'}</b><small>Switch input</small>`;
+      values = item.state === null ? ''
+        : monitor.trendsEnabled ? `<button type="button" class="mon-val ${item.state ? 'on' : ''}" title="On / off trend" onclick="openInputTrend('${encodeURIComponent(item.path)}','${encodeURIComponent(item.name)}')">${box}</button>`
+        : `<div class="mon-val ${item.state ? 'on' : ''}">${box}</div>`;
       sub = item.decoded === false ? 'This kind of module is not read yet' : item.live ? (item.since ? `Since ${new Date(item.since).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}` : 'Switch input') : 'No status from its module yet';
     } else {
       // LIVE while a reading updated in the last 3 minutes; older readings
@@ -1127,7 +1132,8 @@
     currentLevel: { label:'Level', unit:'%', dp:0, zero:true, f:v => v * 100 },
     currentVolume: { label:'Volume', unit:'L', dp:0, zero:true, f:v => v * 1000 },
     capacity: { label:'Capacity', unit:'L', dp:0, f:v => v * 1000 },
-    frequency: { label:'Frequency', unit:'Hz', dp:1, f:v => v }
+    frequency: { label:'Frequency', unit:'Hz', dp:1, f:v => v },
+    state: { label:'On / off', unit:'', dp:0, zero:true, onOff:true, f:v => v }
   };
   // Atmospheric pressure (source 0) in hPa, AC volts to one decimal.
   function readingFor(item, field) {
@@ -1250,6 +1256,18 @@
     // "Now" is the live value. The last row of a long range is an average, and
     // a past period or a circuit that is not reporting has no "now".
     const first = trend.latest !== null && trend.range !== 'custom' ? tile('●', 'Now', trend.latest) : tile('●', 'Last', d[d.length - 1][1]);
+    if (u.onOff) {
+      // A switch input: on or off now, the share of the period it was on, and
+      // how often it came on (counted where the data is full detail).
+      const text = (icon, label, v) => `<div class="stat"><div class="stat-icon">${icon}</div><div><strong>${v}</strong><span>${label}</span></div></div>`;
+      const nowV = trend.latest !== null && trend.range !== 'custom' ? trend.latest : d[d.length - 1][1];
+      const raw = d.every(p => p.length < 3 || p[2] === null || p[2] === p[3]);
+      let ons = 0;
+      for (let i = 1; i < d.length; i++) if (d[i - 1][1] < 0.5 && d[i][1] >= 0.5) ons++;
+      el.innerHTML = text('●', trend.latest !== null && trend.range !== 'custom' ? 'Now' : 'Last', nowV >= 0.5 ? 'ON' : 'OFF') +
+        text('≈', 'Time on', `${Math.round(avg * 100)}%`) + (raw ? text('↑', 'Times on', ons) : '');
+      return;
+    }
     el.innerHTML = first + tile('↓', 'Minimum', Math.min(...d.map(trendLow))) + tile('≈', 'Average', avg) + tile('↑', 'Maximum', Math.max(...d.map(trendHigh)));
   }
 
@@ -1284,10 +1302,14 @@
 
     // Current, power and levels are shown from zero; the scale covers the min-max band.
     const lows = d.map(trendLow);
-    const y = trendTicks(trend.series.r.zero ? Math.min(0, ...lows) : Math.min(...lows), Math.max(...d.map(trendHigh)), 5);
+    // An on/off series (a switch input): two levels, OFF and ON.
+    const onOff = trend.series.r.onOff === true;
+    const y = onOff ? { lo: -0.15, hi: 1.15, ticks: [0, 1], step: 1 }
+      : trendTicks(trend.series.r.zero ? Math.min(0, ...lows) : Math.min(...lows), Math.max(...d.map(trendHigh)), 5);
     let dp = Math.max(0, -Math.floor(Math.log10(y.step) + 1e-9));
     if (y.ticks.some(t => Math.abs(t * Math.pow(10, dp) - Math.round(t * Math.pow(10, dp))) > 1e-6)) dp++;
-    const pad = { l: Math.max(...y.ticks.map(t => ctx.measureText(t.toFixed(dp)).width), ctx.measureText(trend.series.r.unit).width) + 14, r:12, t:12, b:26 };
+    const tickLabel = t => onOff ? (t ? 'ON' : 'OFF') : t.toFixed(dp);
+    const pad = { l: Math.max(...y.ticks.map(t => ctx.measureText(tickLabel(t)).width), ctx.measureText(trend.series.r.unit).width) + 14, r:12, t:12, b:26 };
     const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b, t0 = trend.start, t1 = trend.end, base = pad.t + ph;
     const X = t => pad.l + ((t - t0) / (t1 - t0)) * pw;
     const Y = v => pad.t + (1 - (v - y.lo) / (y.hi - y.lo)) * ph;
@@ -1298,7 +1320,7 @@
     for (const t of y.ticks) {
       const yy = Math.round(Y(t)) + 0.5;
       ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke();
-      ctx.fillText(t.toFixed(dp), pad.l - 8, yy);
+      ctx.fillText(tickLabel(t), pad.l - 8, yy);
     }
     ctx.textBaseline = 'top';
     const n = Math.max(2, Math.min(7, Math.floor(pw / 110)));
@@ -1365,7 +1387,10 @@
     const when = new Date(p[0]).toLocaleString([], Object.assign({ weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }, g.t1 - g.t0 > 300 * 86400e3 ? { year:'numeric' } : {}));
     const u = trend.series.r;
     const spread = p[2] !== null && p[3] !== p[2] ? `<small>min ${p[2].toFixed(u.dp)} · max ${p[3].toFixed(u.dp)}</small>` : '';
-    tip.innerHTML = `<b>${p[1].toFixed(u.dp)} ${u.unit}</b>${spread}<small>${esc(when)}</small>`;
+    // On/off: ON or OFF; over a summarised period, the share of time on.
+    const summarised = p[2] !== null && p[3] !== p[2];
+    const head = u.onOff ? (summarised ? `On ${Math.round(p[1] * 100)}% of the time` : p[1] >= 0.5 ? 'ON' : 'OFF') : `${p[1].toFixed(u.dp)} ${u.unit}`;
+    tip.innerHTML = `<b>${head}</b>${u.onOff ? '' : spread}<small>${esc(when)}</small>`;
     tip.style.display = 'block';
     const x = trend.geom.X(p[0]), tw = tip.offsetWidth;
     tip.style.left = `${Math.max(8, x + 14 + tw > g.W - 8 ? x - 14 - tw : x + 14) + 12}px`;
