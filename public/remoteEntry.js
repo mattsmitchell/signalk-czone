@@ -215,6 +215,24 @@ var signalk_czone = (function () {
       return 'Recording ' + trend.trending + ' circuit' + (trend.trending === 1 ? '' : 's') + ' every ' + trend.sampleSeconds + ' s ' + where + free
     }
 
+    // On a Victron GX: the card setup file, so an owner can open the card for
+    // Signal K without a login to the GX. Shown when trends cannot use a card,
+    // and as a quiet link otherwise.
+    function cardSetup () {
+      if (!trend || trend.gx !== true || configuration.trendsEnabled !== true) return null
+      var link = React.createElement('a', { href: '/plugins/signalk-czone/trend/card-setup', download: 'venus-data.tgz' }, 'card setup file')
+      var needed = !trend.available && (trend.reason === 'write_failed' || trend.reason === 'no_sd_card')
+      if (!needed) {
+        return React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Setting up another card: ', link, ' (no login to the GX needed).')
+      }
+      return React.createElement('div', { role: 'note', style: { marginTop: 8, padding: 8, fontSize: 12, border: '1px solid #e0b252', borderRadius: 4, background: '#fff8e6' } },
+        React.createElement('strong', null, 'No login needed: '),
+        'download the ', link,
+        ' (venus-data.tgz), copy it to the top folder of a FAT32 SD card or USB stick, put it in the GX and restart the GX. ' +
+        'At start-up Venus OS installs a small script that opens the card for Signal K at every boot. Once the GX is back up, this panel shows where trends are recording.'
+      )
+    }
+
     function useSelected () {
       if (!selected) return
       setBusy(true); setError('')
@@ -494,7 +512,7 @@ var signalk_czone = (function () {
 
       React.createElement('div', { style: { marginBottom: 14, padding: 12, border: '1px solid #ccc', borderRadius: 6 } },
         React.createElement('strong', null, 'Trends'),
-        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Off by default. Stores each circuit\'s current and every monitored value every 10 seconds as plain CSV files, for the trend charts in the webapp (the arrow at the end of a circuit row, or a value on the Monitoring tab). Not needed if the data already goes to a database such as InfluxDB.'),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'Off by default. Stores each circuit\'s current and every monitored value, at the rate set below, as plain CSV files, for the trend charts in the webapp (the arrow at the end of a circuit row, or a value on the Monitoring tab). Not needed if the data already goes to a database such as InfluxDB.'),
         React.createElement('div', { style: { marginTop: 9 } },
           React.createElement('label', null,
             React.createElement('input', { type: 'checkbox', checked: configuration.trendsEnabled === true, disabled: busy, onChange: function (e) { persist({ trendsEnabled: e.target.checked }) } }),
@@ -502,6 +520,17 @@ var signalk_czone = (function () {
           )
         ),
         React.createElement('div', { id: 'czone-trend-status', style: { marginTop: 6, fontSize: 12 } }, trendSummary()),
+        cardSetup(),
+        React.createElement('label', { style: { display: 'block', marginTop: 10 } }, 'Record every ',
+          React.createElement('select', { value: String(configuration.trendSampleSeconds || 10), disabled: busy, onChange: function (e) { persist({ trendSampleSeconds: Number(e.target.value) }) } },
+            React.createElement('option', { value: '5' }, '5 seconds'),
+            React.createElement('option', { value: '10' }, '10 seconds'),
+            React.createElement('option', { value: '15' }, '15 seconds'),
+            React.createElement('option', { value: '30' }, '30 seconds'),
+            React.createElement('option', { value: '60' }, '1 minute')
+          )
+        ),
+        React.createElement('div', { style: { marginTop: 6, fontSize: 12 } }, 'A value is written only when it changes (and at least every 10 minutes), so a faster rate costs little space unless values change all the time.'),
         React.createElement('label', { style: { display: 'block', marginTop: 10 } }, 'Trend folder (optional) ',
           React.createElement('input', { type: 'text', style: { width: '60%' }, placeholder: 'Automatic', defaultValue: configuration.trendDirectory || '', disabled: busy, onBlur: function (e) { var value = (e.target.value || '').trim(); if (value !== (configuration.trendDirectory || '')) persist({ trendDirectory: value }) } })
         ),

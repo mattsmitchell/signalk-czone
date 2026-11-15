@@ -226,7 +226,7 @@ With **Record trends** on, a value on the Monitoring tab, or the temperature chi
 
 Off by default: tick **Record trends** in the configuration panel to turn it on. Boats that already send Signal K data to a database (for example InfluxDB with Grafana) can leave it off. When on, the plugin records each circuit's current and every monitored value, and the webapp charts them: the arrow at the end of a circuit row, or a value on the Monitoring tab, opens that trend in a window in the middle of the page (the page under it stays where it was; the window can be made full screen, and fills the screen on a phone), for the last 1 h, 24 h, 7 d, 31 d, 90 d or 1 y, or for a period of up to 366 days chosen under **Custom**.
 
-**What is stored.** The latest value of every `electrical.czone.<circuit>.current` path, and of every monitored value, is sampled every 10 seconds, however often CZone repeats it, and written to plain CSV files in two tiers:
+**What is stored.** The latest value of every `electrical.czone.<circuit>.current` path, and of every monitored value, is sampled every 10 seconds by default (5, 10, 15, 30 seconds or 1 minute: **Record every** in the configuration panel), however often CZone repeats it, and written to plain CSV files in two tiers:
 
 | Tier | File | Row | Used for |
 | --- | --- | --- | --- |
@@ -238,17 +238,18 @@ Full detail is written on change (plus the last unchanged sample before a change
 **Where it goes.**
 
 - `trendDirectory`, if set (on a GX it must be on mounted removable storage).
-- On a Victron GX: an SD card or USB stick only, in `signalk-czone/trends` on the card. The GX's internal flash is never written. Without a card, or with a card Signal K cannot write to, nothing is recorded and the configuration panel says why. See "Trends on an SD card or USB stick" in `README-VenusOS.md`.
+- On a Victron GX: an SD card or USB stick only, in `signalk-czone/trends` on the card. The GX's internal flash is never written. Without a card, or with a card Signal K cannot write to, nothing is recorded and the configuration panel says why. The card has to be opened for Signal K once: the configuration panel offers a **card setup file** (`venus-data.tgz`) to copy onto the card before restarting the GX, with no login needed, or see `README-VenusOS.md` for doing it over SSH.
 - Anywhere else: `trends` in the plugin's data folder.
 
 **How long it is kept.** Nothing is deleted by age unless `trendRetentionDays` is set (31, 90 or 365 days of full detail; summaries stay). When free space falls below a reserve (the larger of 5% and 200 MB on a card; the larger of 10% and 1 GB on a disk shared with the system) the oldest full-detail days are removed first and the oldest summary months only after that, so recording never stops.
 
-**Settings** (in the configuration panel under **Trends**): `trendsEnabled` (default `false`: trends are off until this is ticked), `trendDirectory` (default blank = automatic), `trendRetentionDays` (default `0` = until storage runs low).
+**Settings** (in the configuration panel under **Trends**): `trendsEnabled` (default `false`: trends are off until this is ticked), `trendDirectory` (default blank = automatic), `trendSampleSeconds` (5, 10, 15, 30 or 60; default `10`), `trendRetentionDays` (default `0` = until storage runs low).
 
 **Routes.**
 
 - `GET /plugins/signalk-czone/trend?path=<Signal K path>&range=1h|24h|7d|31d|90d|1y`, or `&from=<ms>&to=<ms>` for a custom period. Answers `{ available, tier, start, end, gapMs, data, latest }`, where `data` rows are `[t, value]` (full detail) or `[t, avg, min, max]` (summaries, or full detail reduced to about 400 points), and `latest` is the live value while the circuit is reporting.
-- `GET /plugins/signalk-czone/trend/status` answers where trends are going, free space, and how many circuits are being recorded, or the reason trends are off.
+- `GET /plugins/signalk-czone/trend/status` answers where trends are going, free space, the sample rate, whether this is a Victron GX, and how many circuits are being recorded, or the reason trends are off.
+- `GET /plugins/signalk-czone/trend/card-setup` downloads `venus-data.tgz`, the card setup file for a GX.
 
 ## Third-party switches
 
