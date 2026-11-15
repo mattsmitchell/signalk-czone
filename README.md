@@ -216,7 +216,7 @@ Values are published under `electrical.czone.monitoring.<name>.*`, as the meters
 **Senders bridged onto NMEA 2000 by the same machine.** Signal K does not pass a plugin its own transmissions, or a GX's:
 
 - A reading sent by Signal K's **Signal K to NMEA 2000** plugin (for example a Ruuvi tag from a Bluetooth plugin) is taken from what that plugin hands Signal K to send.
-- On a **Victron GX**, readings Venus OS itself sends (a Ruuvi tag or a GX tank input bridged by the GX) are read straight off the CAN interface with `candump`, as a CZone display sees them. While it delivers, the copies from Signal K are not used. Setting: **On a Victron GX, read monitoring messages straight off the CAN interface** (on; interface `vecan0`).
+- On a **Victron GX**, readings Venus OS itself sends (a Ruuvi tag or a GX tank input bridged by the GX) are read straight off the CAN interface with `candump`, as a CZone display sees them. While it delivers, the copies from Signal K are not used. Setting: **On a Victron GX, read monitoring messages straight off the CAN interface** (on). It reads the CAN interface Signal K uses for NMEA 2000, which is where CZone is: on a Cerbo GX, CAN 1 is `vecan0` and CAN 2 is `vecan1`. **CAN interface** can name another; blank (or the earlier default `vecan0`) means automatic.
 
 **A circuit's temperature.** A temperature sender named after a circuit ("Freezer Temperature" or "Freezer Temp" for the circuit "Freezer", ignoring case and punctuation) is shown as a chip beside the circuit's name, and in its Victron switch pane label: "Freezer (-18.2 °C, 2.9 A)". A name two senders share pairs with nothing. The temperature is dropped after five minutes without a reading.
 

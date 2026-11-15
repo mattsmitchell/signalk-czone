@@ -8,7 +8,7 @@ const czone = require('./lib/czone')
 const nmea = require('./lib/nmea2000')
 const monitoring = require('./lib/monitoring')
 const sensors = require('./lib/sensors')
-const { createCandump, PGNS: CANDUMP_PGNS } = require('./lib/candump')
+const { createCandump, chooseCanDevice, PGNS: CANDUMP_PGNS } = require('./lib/candump')
 const { createSourcePicker } = require('./lib/sources')
 const { powerHistory } = require('./lib/power-history')
 const { createTrends } = require('./lib/trends')
@@ -216,6 +216,7 @@ module.exports = function (app) {
   let circuitTemps = new Map()
   let monitorFastPacket = null
   let candump = null
+  let candumpDevice = null
   let jsonOutListener = null
   // Which device each meter and sender is read from (lib/sources).
   const sourcePicker = createSourcePicker()
@@ -1003,8 +1004,15 @@ module.exports = function (app) {
     const onVenus = typeof app._czoneSpawn === 'function' || fs.existsSync('/opt/victronenergy')
     const wanted = monitoringRuntime && (monitoringRuntime.meters.length || sensorRuntime.senders.length)
     if (settings.monitoringEnabled !== true || !onVenus || !wanted || settings.monitorCandump === false) return
+    const can = chooseCanDevice(settings.monitorCanDevice, app.config && app.config.settings)
+    if (can.from === 'signalk') log(`Monitoring: reading ${can.device}, the CAN interface Signal K uses for NMEA 2000`)
+    else if (can.from === 'default') log(`Monitoring: no Signal K CAN connection found; reading ${can.device}`)
+    if (can.from === 'setting' && can.signalk.length && !can.signalk.includes(can.device)) {
+      log(`Monitoring: reading ${can.device} as set, but Signal K uses ${can.signalk.join(', ')} for NMEA 2000; CZone is normally there`)
+    }
+    candumpDevice = can
     candump = createCandump({
-      device: settings.monitorCanDevice || 'vecan0',
+      device: can.device,
       log,
       spawnFn: typeof app._czoneSpawn === 'function' ? app._czoneSpawn : undefined,
       onLine: line => {
@@ -1062,7 +1070,7 @@ module.exports = function (app) {
       enabled: true,
       file: mapping ? mapping.fileName : null,
       trendsEnabled: settings.trendsEnabled === true,
-      candump: candump ? candump.status() : null,
+      candump: candump ? { ...candump.status(), device: candumpDevice.device, deviceFrom: candumpDevice.from, signalkDevices: candumpDevice.signalk } : null,
       items,
       temperatures
     }
@@ -1542,8 +1550,8 @@ module.exports = function (app) {
         monitorCanDevice: {
           type: 'string',
           title: 'CAN interface for the above',
-          default: 'vecan0',
-          description: 'vecan0 is the GX\'s VE.Can / NMEA 2000 port.'
+          default: '',
+          description: 'Leave blank: the plugin reads the CAN interface Signal K uses for NMEA 2000, which is where CZone is (on a Cerbo GX, CAN 1 is vecan0 and CAN 2 is vecan1). Set it only to read another interface. "vecan0", the earlier default, also means automatic.'
         },
         victronSwitchCurrent: {
           type: 'boolean',
