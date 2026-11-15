@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-beta.24
+
+- Detect removable SD cards on newer Cerbo GX models and follow Signal K's CAN interface for direct GX monitoring (#42, #43).
+- Add configurable trend sampling and a Venus OS card setup download (#44).
+- Decode COI switch inputs from PGN 65308 variant 03 and respect input wiring polarity (#45).
+- Record switch input changes for on/off trends, including short pulses (#46).
+
 ## 0.3.0-beta.23
 
 - Decode CZone virtual signals (Configuration Tool channels 1–32) from proprietary PGN 65301 module-addressed status reports, creating Signal K state paths when observed.
