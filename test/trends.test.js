@@ -326,6 +326,26 @@ for (const custom of [false, true]) {
   assert.strictEqual(t.status().trending, 0)
 }
 
+// --- An on/off series (a switch input): a change is stored when it happens,
+// as a step, so a press shorter than the sample rate is kept.
+{
+  const sdir = tmp('trend-')
+  const st = createTrends({ directory: sdir })
+  const series = 'electrical.czone.inputs.Bilge_Float.state'
+  const T = Math.floor((Date.now() - 120e3) / 1000) * 1000
+  st.observeState(series, 0, T)
+  st.sample(T + 1000)
+  st.observeState(series, 0, T + 2000) // unchanged: nothing extra
+  st.observeState(series, 1, T + 3000) // pressed...
+  st.observeState(series, 0, T + 4000) // ...and released before the next sample
+  st.observeState(series, 2, T + 4500) // not on/off: ignored
+  st.observeState(series, 'on', T + 4600)
+  st.sample(T + 11000)
+  st.flush()
+  const rows = st.read(series, '1h').data.map(r => [r[0] - T, r[1]])
+  assert.deepStrictEqual(rows, [[1000, 0], [2999, 0], [3000, 1], [3999, 1], [4000, 0], [11000, 0]], JSON.stringify(rows)) // the last: the value now
+}
+
 // --- stop() takes a last sample and closes the open summaries.
 {
   const dir = tmp('rec-')

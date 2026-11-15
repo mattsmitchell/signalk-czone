@@ -55,7 +55,7 @@ assert.deepStrictEqual(inputs.switchInputs({ signalInputs: { inputs: [{ type: 's
 
 // --- the plugin -------------------------------------------------------------
 
-function startPlugin (zcfName) {
+function startPlugin (zcfName, settings = {}) {
   const configPath = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-inputs-'))
   const dir = path.join(configPath, 'plugin-config-data', 'signalk-czone')
   fs.mkdirSync(dir, { recursive: true })
@@ -75,7 +75,7 @@ function startPlugin (zcfName) {
     setPluginError: () => {}
   }
   const plugin = pluginFactory(app)
-  plugin.start({})
+  plugin.start(settings)
   const routes = new Map()
   plugin.registerWithRouter({ get: (p, fn) => routes.set(p, fn), post: () => {}, put: () => {}, delete: () => {} })
   const send = line => listeners.get('canboatjs:rawoutput')(`2026-10-15T06:00:00.000Z R ${line}`)
@@ -88,7 +88,8 @@ function startPlugin (zcfName) {
     return out
   }
   const route = () => { let body; routes.get('/inputs')({}, { json: b => { body = b } }); return body }
-  return { plugin, send, taken, route }
+  const get = (p, query) => { let body; routes.get(p)({ query }, { json: b => { body = b }, status: () => ({ json: b => { body = b } }) }); return body }
+  return { plugin, send, taken, route, get }
 }
 
 const P = 'electrical.czone.inputs.'
@@ -131,6 +132,24 @@ const P = 'electrical.czone.inputs.'
   // The COI's 65284 is its outputs: it must not move an input.
   t.send('18FF0406 27 99 1A 1F FF FF FF FF')
   assert.deepStrictEqual(t.taken(), [])
+  t.plugin.stop()
+}
+
+// Trends on: each input is recorded as 1 / 0, and a press between samples
+// is kept (test bench, Signal Interface module 2).
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-input-trends-'))
+  const t = startPlugin('TestBench.zcf', { trendsEnabled: true, trendDirectory: dir })
+  t.send('18FF0402 27 99 02 0D 00 00 00 00')
+  t.send('18FF0402 27 99 02 0D 02 00 00 00') // Switch 1 pressed
+  t.send('18FF0402 27 99 02 0D 00 00 00 00') // and released at once
+  for (const until = Date.now() + 5; Date.now() < until;) {} // (the release is stored a millisecond after the press)
+  const r = t.get('/trend', { path: `${P}Switch_1.state`, range: '1h' })
+  assert.strictEqual(r.available, true)
+  const values = r.data.map(p => p[1])
+  assert(values.includes(1) && values[values.length - 1] === 0, JSON.stringify(r.data))
+  const other = t.get('/trend', { path: `${P}Switch_2.state`, range: '1h' })
+  assert.strictEqual(other.latest.value, 0, 'an input that stays off is live as 0 (and sampled like any value)')
   t.plugin.stop()
 }
 
