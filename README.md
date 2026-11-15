@@ -66,10 +66,10 @@ Where an input's state is read depends on the kind of module (its type in the ZC
 | Module | Message read | Input `i` is at |
 | --- | --- | --- |
 | Signal Interface | 65284 status and 65308 input message | bit `2i+1` |
-| COI | 65308 input message only (its 65284 is its outputs) | bit `2(i-16)+1` |
+| COI | 65308 input message, variant 03 only (its 65284 is its outputs; its other 65308 variants are not inputs) | bit `2(i-16)+1` to negative, `2(i-16)` to positive |
 | Control X PLUS | 65284 status only | bit `i`, or `i+1` when wired to switch to negative |
 
-Inputs on other kinds of module are listed but not given a state. Checked on a Signal Interface on a test bench, COIs on SugarShack and a Control X PLUS on Compass Rose (Anchor Up, Ignition, High Bilge Water Alarm). Only one Control X PLUS input wired to negative has been seen.
+Inputs on other kinds of module are listed but not given a state. Checked on a Signal Interface on a test bench, COIs on SugarShack and The Pad (inputs to negative and to positive) and a Control X PLUS on Compass Rose (Anchor Up, Ignition, High Bilge Water Alarm). Only one Control X PLUS input wired to negative has been seen.
 
 ```text
 GET /plugins/signalk-czone/inputs
