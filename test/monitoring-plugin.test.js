@@ -38,7 +38,7 @@ function startPlugin (zcfName, settings = {}, appExtra = {}) {
   const listeners = new Map()
   const deltas = []
   const app = {
-    config: { configPath: dir },
+    config: { configPath: dir, settings: appExtra.skSettings }, // skSettings: Signal K's settings.json
     debug () {}, error () {}, setPluginStatus () {}, setPluginError () {},
     on: (e, fn) => listeners.set(e, fn), removeListener: e => listeners.delete(e),
     emit () {}, registerPutHandler () {},
@@ -288,6 +288,64 @@ const M = 'electrical.czone.monitoring.'
     assert.deepStrictEqual(t.values('Victron Temp Sensor'), { temperature: 298.67 }, 'Signal K output ignored while candump delivers')
     t.plugin.stop()
     assert.strictEqual(child.killed, true)
+  }
+
+  // --- Which CAN interface candump reads: the one Signal K uses for NMEA 2000
+  //     (CZone is on it: the plugin switches circuits through it). A Cerbo's
+  //     CAN 2 port is vecan1 (seen on The Pad, where vecan0 was the wrong port).
+  {
+    const { signalkCanDevices, chooseCanDevice } = require('../lib/candump')
+    const provider = (iface, extra = {}) => ({ id: iface, enabled: true, pipeElements: [{ type: 'providers/simple', options: { type: 'NMEA2000', subOptions: { type: 'canbus-canboatjs', interface: iface } } }], ...extra })
+    const sk = { pipedProviders: [provider('vecan1')] }
+    assert.deepStrictEqual(signalkCanDevices(sk), ['vecan1'])
+    assert.deepStrictEqual(signalkCanDevices({ pipedProviders: [provider('vecan1', { enabled: false })] }), [], 'a disabled connection is not used')
+    assert.deepStrictEqual(signalkCanDevices({ pipedProviders: [{ id: 'gw', pipeElements: [{ options: { type: 'NMEA2000', subOptions: { type: 'ydwg02-canboatjs', host: '10.0.0.5' } } }] }] }), [], 'not a CAN interface')
+    assert.deepStrictEqual(signalkCanDevices({ pipedProviders: [provider('vecan1'), provider('vecan1'), provider('can0')] }), ['vecan1', 'can0'])
+    assert.deepStrictEqual(signalkCanDevices({ pipedProviders: [{ id: 'old', pipeElements: [{ options: { type: 'NMEA2000', subOptions: { type: 'canbus', interface: 'can1' } } }] }] }), ['can1'], 'the older canbus connection too')
+    assert.deepStrictEqual(signalkCanDevices({ pipedProviders: [{ id: 'usb', pipeElements: [{ options: { type: 'NMEA2000', subOptions: { type: 'ngt-1-canboatjs', interface: 'ttyUSB0', device: '/dev/ttyUSB0' } } }] }] }), [], 'a USB gateway is not a CAN interface')
+    assert.deepStrictEqual(signalkCanDevices({ pipedProviders: [provider('vecan1; rm -rf /')] }), [], 'only a plain interface name')
+    assert.deepStrictEqual(signalkCanDevices(undefined), [])
+    assert.deepStrictEqual(signalkCanDevices({ pipedProviders: [null, {}, { pipeElements: [null] }] }), [])
+    // Blank, "auto" and the earlier default "vecan0" follow Signal K; anything
+    // else is used as given; with no Signal K CAN connection, vecan0.
+    for (const setting of [undefined, '', ' ', 'auto', 'AUTO', 'vecan0']) assert.deepStrictEqual(chooseCanDevice(setting, sk), { device: 'vecan1', from: 'signalk', signalk: ['vecan1'] }, String(setting))
+    assert.deepStrictEqual(chooseCanDevice('can0', sk), { device: 'can0', from: 'setting', signalk: ['vecan1'] })
+    assert.deepStrictEqual(chooseCanDevice('', {}), { device: 'vecan0', from: 'default', signalk: [] })
+    assert.deepStrictEqual(chooseCanDevice('vecan1', {}), { device: 'vecan1', from: 'setting', signalk: [] })
+    assert.deepStrictEqual(chooseCanDevice('bad name!', sk).device, 'vecan1', 'an unusable name is not passed to candump')
+
+    // Through the plugin: candump is started on Signal K's interface.
+    const spawned = []
+    const spawn = (cmd, args) => {
+      spawned.push(args[0])
+      const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.pid = 4243; c.kill = () => {}
+      setImmediate(() => c.emit('spawn'))
+      return c
+    }
+    const logs = []
+    const t = startPlugin('TestBench-2026-10-01.zcf', { monitorCanDevice: 'vecan0' }, { _czoneSpawn: spawn, skSettings: sk, debug: m => logs.push(String(m)) })
+    await wait(5)
+    assert.ok(spawned[0].startsWith('vecan1,'), spawned[0])
+    const c = t.live().candump
+    assert.strictEqual(c.device, 'vecan1')
+    assert.strictEqual(c.deviceFrom, 'signalk')
+    assert.deepStrictEqual(c.signalkDevices, ['vecan1'])
+    t.plugin.stop()
+    // Set by hand to another interface: used, with a warning in the log.
+    spawned.length = 0
+    logs.length = 0
+    const t2 = startPlugin('TestBench-2026-10-01.zcf', { monitorCanDevice: 'can0' }, { _czoneSpawn: spawn, skSettings: sk, debug: m => logs.push(String(m)) })
+    await wait(5)
+    assert.ok(spawned[0].startsWith('can0,'), spawned[0])
+    assert.ok(logs.some(l => /reading can0 as set, but Signal K uses vecan1/.test(l)), logs.join('\n'))
+    t2.plugin.stop()
+    // No Signal K CAN connection (the test harness): vecan0, as before.
+    spawned.length = 0
+    const t3 = startPlugin('TestBench-2026-10-01.zcf', {}, { _czoneSpawn: spawn })
+    await wait(5)
+    assert.ok(spawned[0].startsWith('vecan0,'), spawned[0])
+    assert.strictEqual(t3.live().candump.deviceFrom, 'default')
+    t3.plugin.stop()
   }
 
   // --- Monitoring not ticked (the default): meters are still published, but
