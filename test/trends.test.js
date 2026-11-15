@@ -33,9 +33,49 @@ const csv = file => fs.readFileSync(file, 'utf8').trim().split('\n').map(l => l.
     '/dev/mmcblk1p5 /data ext4 rw 0 0',
     `/dev/mmcblk0p1 ${card} vfat rw 0 0`
   ].join('\n')
-  assert.strictEqual(findStorageMount(cerbo), card)
-  assert.strictEqual(findStorageMount('/dev/mmcblk1p2 / ext4 rw 0 0\n/dev/mmcblk1p5 /data ext4 rw 0 0'), null)
-  assert.strictEqual(findStorageMount(''), null)
+  // Where the kernel's device type cannot be read, the device number decides.
+  const unknown = () => null
+  assert.strictEqual(findStorageMount(cerbo, unknown), card)
+  assert.strictEqual(findStorageMount('/dev/mmcblk1p2 / ext4 rw 0 0\n/dev/mmcblk1p5 /data ext4 rw 0 0', unknown), null)
+  assert.strictEqual(findStorageMount('', unknown), null)
+  // With it: the same Cerbo, its card reported as SD and its eMMC as MMC.
+  const cerboTypes = dev => ({ mmcblk0: 'SD', mmcblk1: 'MMC' })[dev] || null
+  assert.strictEqual(findStorageMount(cerbo, cerboTypes), card)
+}
+
+// --- The am62xx Cerbo numbers them the other way round: eMMC mmcblk0 (/data on
+//     mmcblk0p5), SD card mmcblk1p1 on /run/media/mmcblk1p1 (seen on a new
+//     Cerbo, Venus OS machine am62xx). The kernel's device type finds the card.
+{
+  const card = tmp('mnt-')
+  const am62 = [
+    '/dev/mmcblk0p5 /data ext4 rw,noatime 0 0',
+    `/dev/mmcblk1p1 ${card} vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro 0 0`
+  ].join('\n')
+  const am62Types = dev => ({ mmcblk0: 'MMC', mmcblk1: 'SD' })[dev] || null
+  assert.strictEqual(findStorageMount(am62, am62Types), card, 'the SD card on mmcblk1')
+  // Built-in flash is never used, whatever its number or where it is mounted.
+  const flash = tmp('mnt-')
+  assert.strictEqual(findStorageMount(`/dev/mmcblk0p3 ${flash} ext4 rw 0 0`, am62Types), null)
+  assert.strictEqual(findStorageMount(`/dev/mmcblk0p3 /run/media/x ext4 rw 0 0`, am62Types), null)
+  // A mount point that is not a folder here is skipped.
+  assert.strictEqual(findStorageMount(`/dev/sda1 /run/media/sda1 vfat rw 0 0\n${am62}`, am62Types), card)
+
+  // The store on that GX: records on the card, not in /data.
+  const store = realCreateTrendStore({ isVenus: true, spaceProvider: ampleSpace, mountsProvider: () => am62, blockTypeProvider: am62Types })
+  const st = store.status()
+  assert.strictEqual(st.available, true, JSON.stringify(st))
+  assert.strictEqual(st.mount, card)
+  assert.strictEqual(st.location, 'removable')
+  assert.strictEqual(st.dir, path.join(card, 'signalk-czone', 'trends'))
+  // A trend folder set by hand on that card is accepted too.
+  const custom = path.join(card, 'my-trends')
+  const store2 = realCreateTrendStore({ isVenus: true, spaceProvider: ampleSpace, directory: custom, mountsProvider: () => am62, blockTypeProvider: am62Types })
+  assert.strictEqual(store2.status().available, true)
+  assert.strictEqual(store2.status().location, 'removable')
+  // Before: the card on mmcblk1 was taken for internal flash and trends stayed off.
+  const before = realCreateTrendStore({ isVenus: true, spaceProvider: ampleSpace, mountsProvider: () => am62, blockTypeProvider: () => null })
+  assert.strictEqual(before.status().reason, 'no_sd_card')
 }
 
 // --- Batched write, read back, samples not yet written are visible.
