@@ -236,6 +236,15 @@
     .trend-pick-list button { display:flex; width:100%; justify-content:space-between; align-items:baseline; background:transparent; border:0; border-radius:8px; color:var(--text); padding:7px 8px; cursor:pointer; text-align:left; font-size:13px; }
     .trend-pick-list button:hover { background:rgba(55,143,215,.14); }
     .trend-pick-list button small { color:var(--muted); margin-left:12px; white-space:nowrap; }
+    .trend-gap { flex:1 1 auto; }
+    .trend-save input { width:100%; box-sizing:border-box; background:#0c2135; color:var(--text); border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:13px; }
+    .trend-save-row { display:flex; align-items:center; gap:12px; margin-top:8px; }
+    .trend-save-msg { color:var(--amber); font-size:12px; }
+    .trend-view-row { display:flex; width:100%; justify-content:space-between; align-items:center; gap:10px; }
+    .trend-view-row > button:first-child { flex:1 1 auto; justify-content:flex-start; }
+    .trend-view-row .trend-view-del { flex:0 0 auto; background:transparent; border:0; color:var(--muted); cursor:pointer; font-size:14px; padding:6px 8px; border-radius:7px; }
+    .trend-view-row .trend-view-del:hover { background:rgba(214,96,96,.18); color:#ffd0d0; }
+    .mfd #trendCsvBtn { display:none; }
     .trend-pick-empty { color:var(--muted); font-size:12px; padding:8px 4px; }
     .trend-legend { display:inline-flex; align-items:center; gap:8px; margin:6px 18px 0 0; font-size:12px; color:#c6d6e7; }
     .trend-legend i { width:12px; height:12px; border-radius:3px; flex:none; }
@@ -433,8 +442,10 @@
       <div class="trend-backdrop" id="trendBackdrop" onclick="closeTrend()"></div>
       <section class="section trend-panel" id="trendPanel" role="dialog" aria-modal="true" aria-labelledby="trendTitle">
         <div class="section-head"><span>📈</span><div><h2 id="trendTitle"></h2><span class="subtle" id="trendSub"></span></div><button type="button" class="sort trend-full" id="trendFull" onclick="toggleTrendFull()" aria-label="Full screen" aria-pressed="false" title="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="trendFullIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><button type="button" class="sort trend-close" onclick="closeTrend()" aria-label="Close trend">✕ Close</button></div>
-        <div class="trend-controls"><div class="trend-seg" id="trendRanges"></div><button type="button" class="trend-add" id="trendAdd" onclick="toggleTrendPicker()" aria-expanded="false">+ Add</button><div class="trend-seg" id="trendMode"></div></div>
+        <div class="trend-controls"><div class="trend-seg" id="trendRanges"></div><button type="button" class="trend-add" id="trendAdd" onclick="toggleTrendPicker()" aria-expanded="false">+ Add</button><div class="trend-seg" id="trendMode"></div><span class="trend-gap"></span><button type="button" class="trend-add" id="trendViewsBtn" onclick="toggleTrendViews()" aria-expanded="false">Views</button><button type="button" class="trend-add" id="trendSaveBtn" onclick="toggleTrendSave()">Save view</button><button type="button" class="trend-add" id="trendCsvBtn" onclick="exportTrendCsv()" title="Download the values on the chart as a CSV">⤓ CSV</button></div>
         <div class="trend-picker" id="trendPicker"><input type="search" id="trendPickSearch" placeholder="Search values to add…" oninput="trendPickerList()" autocomplete="off"><div class="trend-pick-list" id="trendPickList"></div></div>
+        <div class="trend-picker" id="trendViewPanel"><div class="trend-pick-list" id="trendViewList"></div></div>
+        <div class="trend-picker trend-save" id="trendSavePanel"><input type="text" id="trendSaveName" placeholder="Name this view…" maxlength="80" autocomplete="off" onkeydown="if(event.key==='Enter')saveTrendView()"><div class="trend-save-row"><button type="button" class="trend-add" onclick="saveTrendView()">Save view</button><span class="trend-save-msg" id="trendSaveMsg"></span></div></div>
         <div class="trend-custom" id="trendCustom"><label>From <input type="datetime-local" id="trendFrom"></label><label>To <input type="datetime-local" id="trendTo"></label><button type="button" onclick="applyTrendCustom()">Apply</button><span id="trendCustomMsg"></span></div>
         <div class="trend-stats" id="trendStats"></div>
         <div class="trend-chart"><canvas id="trendCanvas"></canvas><div class="trend-tip" id="trendTip"></div><div class="trend-msg" id="trendMsg"></div></div>
@@ -1166,7 +1177,7 @@
     if (field === 'voltage' && item && item.kind === 'ac') return Object.assign({}, r, { dp:1 });
     return r;
   }
-  const trend = { open:false, series:null, list:[], picker:false, pickItems:null, mode:'overlay', range:'24h', custom:null, customOpen:false, start:0, end:0, data:[], gapMs:0, latest:null, hover:null, geom:null, timer:null, seq:0 };
+  const trend = { open:false, series:null, list:[], picker:false, pickItems:null, mode:'overlay', range:'24h', custom:null, customOpen:false, start:0, end:0, data:[], gapMs:0, latest:null, hover:null, geom:null, timer:null, seq:0, views:[], viewsOpen:false, saveOpen:false };
   // Up to five values on one chart. The first keeps the usual colour; added
   // ones take the next of these (no red: red reads as an alarm).
   const TREND_MAX = 5;
@@ -1205,7 +1216,7 @@
     showTrend({ path: trendPath(c), title: c.name.trim(), r: READING.current });
   };
   window.closeTrend = () => {
-    trend.open = false; clearInterval(trend.timer); trend.picker = false;
+    trend.open = false; clearInterval(trend.timer); trend.picker = false; trend.viewsOpen = false; trend.saveOpen = false;
     trendEl('trendPanel').classList.remove('show');
     trendEl('trendBackdrop').classList.remove('show');
     document.body.classList.remove('trend-open');
@@ -1241,6 +1252,15 @@
     trendEl('trendMode').innerHTML = trendUnits().length > 1
       ? [['overlay', 'Overlay'], ['stacked', 'Stacked']].map(([k, l]) => `<button type="button" class="${trend.mode === k ? 'active' : ''}" onclick="setTrendMode('${k}')">${l}</button>`).join('')
       : '';
+    // Saved views, save-this-view, and the CSV download.
+    const vb = trendEl('trendViewsBtn');
+    vb.classList.toggle('active', trend.viewsOpen); vb.setAttribute('aria-expanded', String(trend.viewsOpen));
+    trendEl('trendViewPanel').classList.toggle('show', trend.viewsOpen);
+    const sb = trendEl('trendSaveBtn');
+    const haveData = trend.list.some(s => s.data.length);
+    sb.classList.toggle('active', trend.saveOpen); sb.disabled = !haveData;
+    trendEl('trendSavePanel').classList.toggle('show', trend.saveOpen);
+    trendEl('trendCsvBtn').disabled = !haveData;
   }
 
   // --- More than one value on a chart ------------------------------------------------
@@ -1321,6 +1341,124 @@
     trend.hover = null; trendEl('trendTip').style.display = 'none';
     trendSubtitle(); trendControls(); trendStats(); drawTrend();
   };
+  // --- Saved views and CSV export ----------------------------------------------
+  // The candidate list may not be loaded yet (the panel can open from a
+  // circuit), so make sure it is before a view resolves its paths.
+  async function ensureTrendCandidates() {
+    if (monitor.items.length || trend.pickItems) return;
+    try {
+      const r = await fetch(`${API}/monitoring/live`, { cache:'no-store', credentials:'include' });
+      const d = await r.json();
+      trend.pickItems = Array.isArray(d.items) ? d.items : [];
+    } catch (e) { trend.pickItems = []; }
+  }
+  async function loadTrendViews() {
+    try {
+      const r = await fetch(`${API}/trend/views`, { cache:'no-store', credentials:'include' });
+      const d = await r.json();
+      trend.views = Array.isArray(d.views) ? d.views : [];
+    } catch (e) { trend.views = []; }
+    renderTrendViews();
+  }
+  function renderTrendViews() {
+    const el = trendEl('trendViewList');
+    if (!trend.views.length) { el.innerHTML = `<div class="trend-pick-empty">No saved views yet. Set up a chart, then “Save view”.</div>`; return; }
+    el.innerHTML = trend.views.map(v => {
+      const n = (v.series || []).length;
+      return `<div class="trend-view-row"><button type="button" onclick="openSavedView('${esc(v.id)}')"><span>${esc(v.name)}</span><small>${n} value${n === 1 ? '' : 's'}${v.mode === 'stacked' ? ' · stacked' : ''}</small></button><button type="button" class="trend-view-del" onclick="deleteTrendView('${esc(v.id)}')" aria-label="Delete ${esc(v.name)}" title="Delete">✕</button></div>`;
+    }).join('');
+  }
+  window.toggleTrendViews = () => {
+    trend.viewsOpen = !trend.viewsOpen;
+    if (trend.viewsOpen) { trend.picker = false; trend.saveOpen = false; renderTrendViews(); loadTrendViews(); }
+    trendControls();
+  };
+  window.toggleTrendSave = () => {
+    if (!trend.list.some(s => s.data.length)) return;
+    trend.saveOpen = !trend.saveOpen;
+    if (trend.saveOpen) { trend.picker = false; trend.viewsOpen = false; }
+    trendControls();
+    if (trend.saveOpen) { const i = trendEl('trendSaveName'); i.value = trend.list.length === 1 ? trendName(trend.list[0]) : ''; trendEl('trendSaveMsg').textContent = ''; try { i.focus(); i.select(); } catch (e) {} }
+  };
+  window.saveTrendView = async () => {
+    const name = (trendEl('trendSaveName').value || '').trim();
+    const msg = trendEl('trendSaveMsg');
+    if (!name) { msg.textContent = 'Enter a name.'; return; }
+    const body = { name, series: trend.list.map(s => ({ path: s.path })), mode: trend.mode, range: trend.range === 'custom' ? '24h' : trend.range };
+    try {
+      const r = await fetch(`${API}/trend/views`, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.error || `Could not save (HTTP ${r.status})`);
+      trend.saveOpen = false; trendControls();
+      await loadTrendViews();
+    } catch (e) { msg.textContent = e.message; }
+  };
+  window.deleteTrendView = async id => {
+    try { await fetch(`${API}/trend/views/${encodeURIComponent(id)}`, { method:'DELETE', credentials:'include' }); } catch (e) {}
+    await loadTrendViews();
+  };
+  window.openSavedView = async id => {
+    const v = (trend.views || []).find(x => x.id === id);
+    if (!v) return;
+    await ensureTrendCandidates();
+    const byPath = {}; for (const c of trendCandidates()) byPath[c.path] = c;
+    const resolved = (v.series || []).map(s => byPath[s.path]).filter(Boolean).slice(0, TREND_MAX);
+    if (!resolved.length) { alert('None of this view’s values are available now.'); return; }
+    const used = [];
+    trend.list = resolved.map((c, i) => { const rgb = i === 0 ? TREND_RGB : (TREND_COLORS.find(x => used.indexOf(x) < 0) || TREND_COLORS[0]); used.push(rgb); return { path: c.path, title: c.title, r: c.r, rgb, data: [], gapMs: 0, latest: null }; });
+    trend.open = true; trend.series = trend.list[0]; trend.data = []; trend.hover = null;
+    trend.mode = v.mode === 'stacked' ? 'stacked' : 'overlay';
+    trend.range = v.range === 'custom' ? '24h' : (v.range || '24h'); trend.custom = null; trend.customOpen = false;
+    trend.picker = false; trend.viewsOpen = false; trend.saveOpen = false;
+    trendEl('trendTitle').textContent = v.name;
+    trendSubtitle();
+    trendEl('trendPanel').classList.add('show');
+    trendEl('trendBackdrop').classList.add('show');
+    document.body.classList.add('trend-open');
+    loadTrend();
+  };
+  // The values on the chart as a CSV: a time column, then one column per value,
+  // each held at its last reading between its own samples (the line as drawn).
+  function csvCell(s) { s = String(s == null ? '' : s); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  function trendCsv() {
+    const series = trend.list.filter(s => s.data.length);
+    if (!series.length) return '';
+    const times = new Set();
+    series.forEach(s => s.data.forEach(p => times.add(p[0])));
+    const ts = [...times].sort((a, b) => a - b);
+    const header = ['Time', ...series.map(s => `${s.title} (${s.r.onOff ? 'on/off' : s.r.unit || s.r.label})`)];
+    const at = series.map(() => 0);
+    const lines = [header.map(csvCell).join(',')];
+    for (const t of ts) {
+      const cells = [new Date(t).toISOString()];
+      series.forEach((s, si) => {
+        let j = at[si];
+        while (j + 1 < s.data.length && s.data[j + 1][0] <= t) j++;
+        at[si] = j;
+        const p = s.data[j];
+        const v = p && p[0] <= t ? p[1] : null;
+        // dp is 0 for an on/off input, so this gives 0 or 1 for those.
+        cells.push(v === null || v === undefined ? '' : v.toFixed(s.r.dp));
+      });
+      lines.push(cells.map(csvCell).join(','));
+    }
+    return lines.join('\r\n');
+  }
+  window.exportTrendCsv = () => {
+    const csv = trendCsv();
+    if (!csv) return;
+    const title = (trendEl('trendTitle').textContent || 'trend').trim();
+    const name = `${title} ${trend.range} ${new Date().toISOString().slice(0, 10)}`.replace(/[\\/:*?"<>|]+/g, '-');
+    try {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name + '.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { alert('Could not export: ' + e.message); }
+  };
+
   function trendMsg(text) { const m = trendEl('trendMsg'); m.textContent = text; m.classList.toggle('show', !!text); }
 
   async function loadTrend() {
