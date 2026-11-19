@@ -1384,7 +1384,10 @@
     const name = (trendEl('trendSaveName').value || '').trim();
     const msg = trendEl('trendSaveMsg');
     if (!name) { msg.textContent = 'Enter a name.'; return; }
-    const body = { name, series: trend.list.map(s => ({ path: s.path })), mode: trend.mode, range: trend.range === 'custom' ? '24h' : trend.range };
+    const body = { name, series: trend.list.map(s => ({ path: s.path })), mode: trend.mode, range: trend.range };
+    // A custom range keeps its from/to, so the view reopens on the same period
+    // instead of silently becoming a rolling 24 h.
+    if (trend.range === 'custom' && trend.custom) { body.from = trend.custom.from; body.to = trend.custom.to; }
     try {
       const r = await fetch(`${API}/trend/views`, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
       const d = await r.json();
@@ -1394,7 +1397,11 @@
     } catch (e) { msg.textContent = e.message; }
   };
   window.deleteTrendView = async id => {
-    try { await fetch(`${API}/trend/views/${encodeURIComponent(id)}`, { method:'DELETE', credentials:'include' }); } catch (e) {}
+    try {
+      const r = await fetch(`${API}/trend/views/${encodeURIComponent(id)}`, { method:'DELETE', credentials:'include' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || `Could not delete (HTTP ${r.status})`);
+    } catch (e) { alert(e.message); }
     await loadTrendViews();
   };
   window.openSavedView = async id => {
@@ -1408,7 +1415,9 @@
     trend.list = resolved.map((c, i) => { const rgb = i === 0 ? TREND_RGB : (TREND_COLORS.find(x => used.indexOf(x) < 0) || TREND_COLORS[0]); used.push(rgb); return { path: c.path, title: c.title, r: c.r, rgb, data: [], gapMs: 0, latest: null }; });
     trend.open = true; trend.series = trend.list[0]; trend.data = []; trend.hover = null;
     trend.mode = v.mode === 'stacked' ? 'stacked' : 'overlay';
-    trend.range = v.range === 'custom' ? '24h' : (v.range || '24h'); trend.custom = null; trend.customOpen = false;
+    trend.customOpen = false;
+    if (v.range === 'custom' && Number.isFinite(v.from) && Number.isFinite(v.to)) { trend.range = 'custom'; trend.custom = { from: v.from, to: v.to }; }
+    else { trend.range = v.range === 'custom' ? '24h' : (v.range || '24h'); trend.custom = null; }
     trend.picker = false; trend.viewsOpen = false; trend.saveOpen = false;
     trendEl('trendTitle').textContent = v.name;
     trendSubtitle();
@@ -1436,7 +1445,11 @@
         while (j + 1 < s.data.length && s.data[j + 1][0] <= t) j++;
         at[si] = j;
         const p = s.data[j];
-        const v = p && p[0] <= t ? p[1] : null;
+        // Hold the last reading, but not across a gap: once a sample is older
+        // than this series' gap limit, the cell is blank (a module off the bus,
+        // or time past its final sample), so the CSV never invents data.
+        const g = s.gapMs || 16 * 60e3;
+        const v = p && p[0] <= t && (t - p[0]) <= g ? p[1] : null;
         // dp is 0 for an on/off input, so this gives 0 or 1 for those.
         cells.push(v === null || v === undefined ? '' : v.toFixed(s.r.dp));
       });
@@ -1468,25 +1481,29 @@
     if (!trend.data.length) { trendMsg('Loading…'); trendStats(); drawTrend(); }
     const custom = trend.range === 'custom' && trend.custom;
     const query = custom ? `from=${trend.custom.from}&to=${trend.custom.to}` : `range=${trend.range}`;
-    // Every value on the chart, side by side; the first is the one the
-    // figures and messages are about.
+    // Every value on the chart, side by side. Each result carries its own
+    // path, so a response is matched to its series by path, not by position:
+    // removing a value mid-load can't then apply one value's data to another,
+    // and a response for a value no longer on the chart is simply ignored.
     const results = await Promise.all(trend.list.map(async s => {
       try {
         const r = await fetch(`${API}/trend?path=${encodeURIComponent(s.path)}&${query}`, { cache:'no-store', credentials:'include' });
-        return await r.json();
-      } catch (e) { return { available:false, detail:e.message }; }
+        return { path: s.path, body: await r.json() };
+      } catch (e) { return { path: s.path, body: { available:false, detail:e.message } }; }
     }));
     if (seq !== trend.seq || !trend.open) return;
+    const byPath = {};
+    results.forEach(x => { byPath[x.path] = x.body; });
     // Kept as [t, value, min, max]; min and max are null for full detail.
     // Converted to display units here, so the chart and figures need not know.
-    trend.list.forEach((s, i) => {
-      const r = results[i] || {};
+    trend.list.forEach(s => {
+      const r = byPath[s.path] || {};
       const f = s.r.f, fx = v => (v === null || v === undefined ? null : f(v));
       s.data = (Array.isArray(r.data) ? r.data : []).map(p => [p[0], f(p[1]), p.length > 2 ? fx(p[2]) : null, p.length > 3 ? fx(p[3]) : null]);
       s.gapMs = Number(r.gapMs) || 16 * 60e3;
       s.latest = r.latest && Number.isFinite(r.latest.value) ? f(r.latest.value) : null;
     });
-    const res = results[0] || {};
+    const res = byPath[trend.list[0] && trend.list[0].path] || {};
     trend.data = trend.list[0].data;
     trend.gapMs = trend.list[0].gapMs;
     trend.latest = trend.list[0].latest;

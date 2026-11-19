@@ -1818,11 +1818,11 @@ module.exports = function (app) {
       })
       router.post('/trend/views', (req, res) => {
         if (!trendViews) return res.status(503).json({ ok: false, error: 'not ready' })
-        try { res.json({ ok: true, view: trendViews.save(req.body || {}) }) } catch (err) { res.status(400).json({ ok: false, error: err.message }) }
+        try { res.json({ ok: true, view: trendViews.save(req.body || {}) }) } catch (err) { res.status(err.status || 400).json({ ok: false, error: err.message }) }
       })
       const removeView = (req, res) => {
         if (!trendViews) return res.status(503).json({ ok: false, error: 'not ready' })
-        res.json({ ok: trendViews.remove(req.params.id) })
+        try { res.json({ ok: trendViews.remove(req.params.id) }) } catch (err) { res.status(err.status || 500).json({ ok: false, error: err.message }) }
       }
       if (typeof router.delete === 'function') router.delete('/trend/views/:id', removeView)
       // Not every browser/proxy passes DELETE through; a POST does the same.

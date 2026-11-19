@@ -109,6 +109,18 @@ async function main () {
   run(`trend.list = [{ path: 'v', title: 'x', r: READING.voltage, data: [] }]`)
   assert.strictEqual(run('trendCsv()'), '')
 
+  // Across a gap the held value stops: a sample older than the series' gapMs
+  // leaves the cell blank, both inside an internal gap and past the last sample.
+  run(`trend.list = [
+    { path: 'a', title: 'A', r: READING.voltage, gapMs: 100, data: [[1000, 10], [1300, 20]] },
+    { path: 'b', title: 'B', r: READING.voltage, gapMs: 100000, data: [[1150, 5], [1600, 6]] }
+  ]`)
+  const grows = run('trendCsv()').split('\r\n')
+  const grow = t => grows.find(r => r.indexOf(new Date(t).toISOString()) === 0)
+  assert.strictEqual(grow(1150), new Date(1150).toISOString() + ',,5.00', 'A blank inside its gap; B present')
+  assert.strictEqual(grow(1300), new Date(1300).toISOString() + ',20.00,5.00', 'A own sample; B still held within its gap')
+  assert.strictEqual(grow(1600), new Date(1600).toISOString() + ',,6.00', 'A blank past its final sample')
+
   // exportTrendCsv downloads the text with a dated filename.
   run(`trend.range = '24h'; trend.list = [{ path: 'v', title: 'House Battery', r: READING.voltage, data: [[1000, 53.1]] }]`)
   el('trendTitle').textContent = 'House Battery'
@@ -132,11 +144,20 @@ async function main () {
   })
   assert.strictEqual(run('trend.saveOpen'), false, 'the save row closes')
 
-  // A custom range is saved as 24h (its window is not kept).
-  run(`trend.range = 'custom'`)
-  el('trendSaveName').value = 'Now'
+  // A custom range keeps its from/to, so the saved view reopens on the same
+  // period instead of silently becoming a rolling 24 h.
+  run(`trend.range = 'custom'; trend.custom = { from: 1000, to: 5000 }`)
+  el('trendSaveName').value = 'That night'
   await w.saveTrendView(); await tick()
-  assert.strictEqual(posted[posted.length - 1].range, '24h')
+  assert.strictEqual(posted[posted.length - 1].range, 'custom')
+  assert.strictEqual(posted[posted.length - 1].from, 1000)
+  assert.strictEqual(posted[posted.length - 1].to, 5000)
+  // Opening it restores the custom window.
+  run('trend.custom = null; trend.range = "24h"')
+  const night = serverViews.find(v => v.name === 'That night')
+  await w.openSavedView(night.id); await tick(); await tick()
+  assert.strictEqual(run('trend.range'), 'custom')
+  assert.deepStrictEqual(plain('trend.custom'), { from: 1000, to: 5000 })
 
   // An empty name is refused client-side (nothing posted).
   const before = posted.length

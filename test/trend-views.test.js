@@ -49,6 +49,41 @@ assert.strictEqual(store.list().length, 0)
 fs.writeFileSync(path.join(dir, 'trend-views.json'), 'not json')
 assert.deepStrictEqual(tv.createTrendViews({ dir }).list(), [])
 
+// A custom range keeps its from/to; a custom range with no valid window falls
+// back to a rolling 24 h.
+assert.deepStrictEqual(tv.sanitize({ name: 'x', series: ['p'], range: 'custom', from: 1000, to: 5000 }), { name: 'x', series: [{ path: 'p' }], mode: 'overlay', range: 'custom', from: 1000, to: 5000 })
+assert.strictEqual(tv.sanitize({ name: 'x', series: ['p'], range: 'custom', from: 5000, to: 1000 }).range, '24h', 'to must be after from')
+assert.strictEqual(tv.sanitize({ name: 'x', series: ['p'], range: 'custom' }).range, '24h', 'custom with no window')
+const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'tv2-'))
+let s2 = tv.createTrendViews({ dir: dir2 })
+const cv = s2.save({ name: 'Window', series: ['p'], range: 'custom', from: 10, to: 20 })
+assert.deepStrictEqual([cv.range, cv.from, cv.to], ['custom', 10, 20])
+assert.deepStrictEqual((tv.createTrendViews({ dir: dir2 }).list()[0]), cv, 'custom window persists verbatim')
+
+// A failed write is NOT reported as a save: save/remove throw, nothing commits,
+// and the existing file on disk is untouched (atomic temp+rename).
+const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'tv3-'))
+const viewsFile = path.join(dir3, 'trend-views.json')
+let s3 = tv.createTrendViews({ dir: dir3 })
+s3.save({ name: 'One', series: ['p'] })
+const okList = s3.list()
+const goodBytes = fs.readFileSync(viewsFile, 'utf8')
+const origRename = fs.renameSync
+fs.renameSync = () => { throw new Error('simulated rename failure') }
+let threw = false
+try { s3.save({ name: 'Two', series: ['q'] }) } catch (e) { threw = true; assert.strictEqual(e.status, 500); assert(/could not save/i.test(e.message)) }
+assert(threw, 'save throws when the write fails')
+assert.deepStrictEqual(s3.list(), okList, 'in-memory list unchanged after a failed save')
+assert.strictEqual(fs.readFileSync(viewsFile, 'utf8'), goodBytes, 'existing file left intact')
+assert.strictEqual(fs.readdirSync(dir3).filter(f => f.endsWith('.tmp')).length, 0, 'temp file cleaned up on failure')
+threw = false
+try { s3.remove(okList[0].id) } catch (e) { threw = true; assert.strictEqual(e.status, 500) }
+assert(threw, 'remove throws when the write fails')
+assert.deepStrictEqual(s3.list(), okList, 'in-memory list unchanged after a failed remove')
+fs.renameSync = origRename
+// With writing restored, the last good content is still what loads.
+assert.deepStrictEqual(tv.createTrendViews({ dir: dir3 }).list(), okList, 'disk still holds the last good save')
+
 // --- the plugin routes --------------------------------------------------------
 function makePlugin () {
   const configPath = fs.mkdtempSync(path.join(os.tmpdir(), 'signalk-czone-views-'))
@@ -98,6 +133,15 @@ assert.strictEqual(p.call('get', '/trend/views').body.views.length, 2)
 p.plugin.stop()
 p.plugin.start({})
 assert.strictEqual(p.call('get', '/trend/views').body.views.length, 2)
+
+// A failed disk write surfaces as HTTP 500 with ok:false, not a false success.
+const origRenameRoute = fs.renameSync
+fs.renameSync = () => { throw new Error('simulated rename failure') }
+const failed = p.call('post', '/trend/views', { body: { name: 'Wont Save', series: ['z'] } })
+fs.renameSync = origRenameRoute
+assert.strictEqual(failed.status, 500, 'write failure is 500, not 400 or 200')
+assert.strictEqual(failed.body.ok, false)
+assert(!p.call('get', '/trend/views').body.views.some(v => v.name === 'Wont Save'), 'nothing saved when the write failed')
 
 // Delete by id.
 assert.deepStrictEqual(p.call('delete', '/trend/views/:id', { params: { id } }).body, { ok: true })
