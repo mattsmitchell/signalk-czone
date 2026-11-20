@@ -12,6 +12,7 @@ const { createCandump, chooseCanDevice, PGNS: CANDUMP_PGNS } = require('./lib/ca
 const { createSourcePicker } = require('./lib/sources')
 const { powerHistory } = require('./lib/power-history')
 const { createTrends } = require('./lib/trends')
+const { createTrendViews } = require('./lib/trend-views')
 const { cardSetupArchive, CARD_SETUP_FILE } = require('./lib/trends/venus-card')
 const signalk = require('./lib/signalk')
 const virtualSignals = require('./lib/virtual-signals')
@@ -223,6 +224,7 @@ module.exports = function (app) {
   const sourcePicker = createSourcePicker()
   // Trend recording of circuit current (see lib/trends).
   let trends = null
+  let trendViews = null
   // Server-side change cache for circuit state/brightness notifications.
   // CZone telemetry repeats values frequently; those UI-facing paths are
   // published only when their observed value changes. Current telemetry is
@@ -1618,6 +1620,7 @@ module.exports = function (app) {
         log
       })
       trends.start()
+      trendViews = createTrendViews({ dir: configDir, log })
       startBridge()
       switchPane.start(settings, mapping).catch(err => log(`Victron switch pane: ${err.message}`))
 
@@ -1806,6 +1809,24 @@ module.exports = function (app) {
       router.get('/trend/status', (_req, res) => {
         res.json(trends ? trends.status() : { available: false, reason: 'not_started' })
       })
+
+      // Saved trend views (lib/trend-views.js): a view is a named set of values
+      // plus the overlay/stacked and range choices, stored once on the server
+      // so it is the same on every device.
+      router.get('/trend/views', (_req, res) => {
+        res.json({ views: trendViews ? trendViews.list() : [] })
+      })
+      router.post('/trend/views', (req, res) => {
+        if (!trendViews) return res.status(503).json({ ok: false, error: 'not ready' })
+        try { res.json({ ok: true, view: trendViews.save(req.body || {}) }) } catch (err) { res.status(err.status || 400).json({ ok: false, error: err.message }) }
+      })
+      const removeView = (req, res) => {
+        if (!trendViews) return res.status(503).json({ ok: false, error: 'not ready' })
+        try { res.json({ ok: trendViews.remove(req.params.id) }) } catch (err) { res.status(err.status || 500).json({ ok: false, error: err.message }) }
+      }
+      if (typeof router.delete === 'function') router.delete('/trend/views/:id', removeView)
+      // Not every browser/proxy passes DELETE through; a POST does the same.
+      router.post('/trend/views/:id/delete', removeView)
 
       router.get('/circuits', (_req, res) => {
         res.json({
