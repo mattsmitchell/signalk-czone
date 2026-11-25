@@ -87,4 +87,56 @@ assert.deepStrictEqual(
   [{ circuit: shower, enabled: true }]
 )
 
+// --- Paged form (Control X Plus): byte 3 = page<<5, byte 4 = 8 channel states,
+// channel = page*8 + bit. Captured on Compass Rose, 25 Nov 2026. ---
+const vs10 = circuit('Hotwater', 0x02, 41)     // ZCF ch 41 -> page 5, bit 1
+const vs11 = circuit('AC Outlets', 0x01, 42)   // ZCF ch 42 -> page 5, bit 2
+const vs09 = circuit('Also page 5', 0x02, 40)  // ZCF ch 40 -> page 5, bit 0
+const vs01 = circuit('Page 4 signal', 0x02, 32) // ZCF ch 32 -> page 4, bit 0
+
+// Decode shape: byte 3 is a page selector, not the 0x9F subtype.
+const paged = read('03:25:00.000 R 1CFF1502 27 99 02 A0 02 00 00 00')
+assert(paged, 'paged PGN 65301 decoded')
+assert.strictEqual(paged.module, 0x02)
+assert.strictEqual(paged.page, 5)
+assert.strictEqual(paged.bits, 0x02)
+assert.strictEqual(paged.bitmap, undefined, 'paged form carries no 32-bit bitmap')
+
+// VS 10 ON (module 2, page 5 bit 1); its page-mate in bit 0 reads OFF.
+assert.deepStrictEqual(
+  virtual.virtualSignalStates({ circuits: [vs10, vs09] }, paged)
+    .map(s => [s.circuit.name, s.enabled]),
+  [['Hotwater', true], ['Also page 5', false]]
+)
+
+// VS 11 ON (module 1, page 5 bit 2) — the real capture byte 4 = 0x04.
+assert.deepStrictEqual(
+  virtual.virtualSignalStates({ circuits: [vs11] },
+    read('03:25:00.000 R 1CFF1501 27 99 01 A0 04 00 00 00')),
+  [{ circuit: vs11, enabled: true }]
+)
+
+// A paged frame reports ONLY its own page: a page-4 frame says nothing about a
+// page-5 channel, even with every bit set.
+assert.deepStrictEqual(
+  virtual.virtualSignalStates({ circuits: [vs10] },
+    read('03:25:00.000 R 1CFF1502 27 99 02 80 ff 00 00 00')), []
+)
+// ...but it does report its own page-4 channel.
+assert.deepStrictEqual(
+  virtual.virtualSignalStates({ circuits: [vs01] },
+    read('03:25:00.000 R 1CFF1502 27 99 02 80 01 00 00 00')),
+  [{ circuit: vs01, enabled: true }]
+)
+
+// Module is matched from the payload in the paged form too: module 1's frame
+// must not drive a module 2 signal.
+assert.deepStrictEqual(
+  virtual.virtualSignalStates({ circuits: [vs10] },
+    read('03:25:00.000 R 1CFF1501 27 99 01 A0 02 00 00 00')), []
+)
+
+// A paged selector with any low bits set is not a page (and not 0x9F): ignored.
+assert.strictEqual(read('03:25:00.000 R 1CFF1502 27 99 02 A1 02 00 00 00'), null)
+
 console.log('CZone virtual signal status capture and module mapping tests passed')
