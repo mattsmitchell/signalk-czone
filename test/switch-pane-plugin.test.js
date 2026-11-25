@@ -72,14 +72,20 @@ const tap = (slug, on) => objects[`/SwitchableOutput/${slug}/State`].SetValue([[
       allowCzoneWrite: true,
       victronSwitches: true,
       confirmOff: [{ circuit: 'Light 2' }],
-      bridges: [{ circuit: 'Light 3', target: 'shelly', host: '127.0.0.1', channel: 0 }]
+      bridges: [
+        { circuit: 'Light 3', target: 'shelly', host: '127.0.0.1', channel: 0 },
+        { circuit: 'Light 4', target: 'victron', output: 'com.victronenergy.switch.test#1' }
+      ]
     })
     for (let i = 0; i < 50 && !p.paneStatus().running; i++) await wait(20)
     const st = p.paneStatus()
     assert.strictEqual(st.running, true, JSON.stringify(st))
-    // The webapp's circuits, less the one linked to a third-party switch.
+    // A circuit bridged to a Shelly directly by IP stays in the pane (the Shelly
+    // has no other presence on the GX); one bridged to a Victron output is
+    // dropped (that output is already in the pane). 6 circuits - Light 4 = 5.
     assert.strictEqual(st.channels, 5)
-    assert.strictEqual(objects['/SwitchableOutput/Light_3/State'], undefined)
+    assert(objects['/SwitchableOutput/Light_3/State'], 'direct-IP Shelly bridge kept in pane')
+    assert.strictEqual(objects['/SwitchableOutput/Light_4/State'], undefined, 'Victron-output bridge excluded')
     assert.strictEqual(get('/SwitchableOutput/Light_1/Settings/Group'), 'Lighting')
     assert.strictEqual(get('/SwitchableOutput/Buzzer/Settings/Group'), 'Pumps')
     assert.strictEqual(get('/SwitchableOutput/Light_1/Name'), 'CZone')
