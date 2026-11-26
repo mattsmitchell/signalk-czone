@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0-beta.25
+
+- Compare up to five trend values in one chart, with overlay or stacked layouts and scales grouped by unit (#49).
+- Save named trend views on the Signal K server for reuse across devices, preserving selected values, layout, rolling ranges and custom date windows.
+- Export chart values as CSV, leaving cells empty when readings exceed their series' gap limit.
+- Match in-flight chart responses by Signal K path when series are removed, and report saved-view storage failures while preserving the previous saved views.
+
+
 ## 0.3.0-beta.24
 
 - Detect removable SD cards on newer Cerbo GX models and follow Signal K's CAN interface for direct GX monitoring (#42, #43).
