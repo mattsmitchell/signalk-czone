@@ -12,6 +12,7 @@ const { createCandump, chooseCanDevice, PGNS: CANDUMP_PGNS } = require('./lib/ca
 const { createSourcePicker } = require('./lib/sources')
 const { powerHistory } = require('./lib/power-history')
 const { createTrends } = require('./lib/trends')
+const { createTrendViews } = require('./lib/trend-views')
 const { cardSetupArchive, CARD_SETUP_FILE } = require('./lib/trends/venus-card')
 const signalk = require('./lib/signalk')
 const virtualSignals = require('./lib/virtual-signals')
@@ -164,6 +165,17 @@ module.exports = function (app) {
       if (on && confirmOn.has(c.name) && settings.confirmOnAllowElsewhere !== true) refuse('not switched on: this circuit asks before turning on')
       sendCircuitState(c, on)
     },
+    // A metering driver (Shelly) hands back power/current/voltage each poll;
+    // publish them on the circuit's own paths, same as CZone load current.
+    onMeter: (name, m) => {
+      const c = mapping && mapping.circuits.find(x => x.name === name)
+      if (!c || !m) return
+      if (Number.isFinite(m.current)) publishCurrent(c, m.current, null, 'shelly')
+      if (Number.isFinite(m.power)) publishPower(c, m.power, 'shelly')
+      // Keep the measured voltage so the Victron pane can tell an AC load (shown
+      // as watts) from a DC one (shown as amps); not published as a path.
+      if (Number.isFinite(m.voltage)) { const st = runtimeState.get(c.name) || {}; st.voltage = m.voltage; runtimeState.set(c.name, st) }
+    },
     drivers: bridgeDrivers
   })
   // Victron switch pane (lib/victron/switches): the CZone circuits as
@@ -183,6 +195,17 @@ module.exports = function (app) {
       const c = m && mapping && mapping.circuits.find(x => x.slug === m[1])
       const st = c && runtimeState.get(c.name)
       return st && Number.isFinite(st.current) ? st.current : null
+    },
+    getPower: skPath => {
+      const m = /^electrical\.czone\.([^.]+)\.power$/.exec(skPath || '')
+      const c = m && mapping && mapping.circuits.find(x => x.slug === m[1])
+      const st = c && runtimeState.get(c.name)
+      return st && Number.isFinite(st.power) ? st.power : null
+    },
+    getVoltage: slug => {
+      const c = mapping && mapping.circuits.find(x => x.slug === slug)
+      const st = c && runtimeState.get(c.name)
+      return st && Number.isFinite(st.voltage) ? st.voltage : null
     },
     controls: () => ({
       state: (slug, on) => {
@@ -223,6 +246,7 @@ module.exports = function (app) {
   const sourcePicker = createSourcePicker()
   // Trend recording of circuit current (see lib/trends).
   let trends = null
+  let trendViews = null
   // Server-side change cache for circuit state/brightness notifications.
   // CZone telemetry repeats values frequently; those UI-facing paths are
   // published only when their observed value changes. Current telemetry is
@@ -717,12 +741,14 @@ module.exports = function (app) {
     state.current = current
     runtimeState.set(circuit.name, state)
     const pathName = 'electrical.czone.' + circuit.slug + '.current'
-    const sourceInfo = {
-      label: pgn === CURRENT_PGN_AC ? 'CZone-AC' : 'CZone-DC',
-      type: 'NMEA2000',
-      src: String(source),
-      pgn: Number(pgn)
-    }
+    const sourceInfo = pgn == null
+      ? { label: 'Shelly', type: 'Shelly', src: String(source) }
+      : {
+          label: pgn === CURRENT_PGN_AC ? 'CZone-AC' : 'CZone-DC',
+          type: 'NMEA2000',
+          src: String(source),
+          pgn: Number(pgn)
+        }
     // Current is telemetry, not a change notification. Publish every valid
     // observation so Signal K subscribers and time-series consumers retain the
     // CZone reporting cadence. Change-caching is only for UI/control paths.
@@ -731,6 +757,21 @@ module.exports = function (app) {
     else if (typeof app.emit === 'function') app.emit('delta', delta)
     // The trend keeps the latest value and stores it on its own beat.
     if (trends) trends.observe(pathName, current)
+  }
+  // Per-circuit power (W), for circuits whose load is metered by a Shelly. CZone
+  // modules do not report power, so this path only appears for Shelly-bridged
+  // circuits; the webapp shows it as the headline with current beside it.
+  function publishPower (circuit, power, source) {
+    if (!circuit || !Number.isFinite(power)) return
+    const state = runtimeState.get(circuit.name) || {}
+    state.power = power
+    runtimeState.set(circuit.name, state)
+    const pathName = 'electrical.czone.' + circuit.slug + '.power'
+    const sourceInfo = { label: 'Shelly', type: 'Shelly', src: String(source) }
+    const delta = signalk.circuitDelta(pathName, power, circuit, sourceInfo)
+    if (typeof app.handleMessage === 'function') app.handleMessage(PLUGIN_ID, delta)
+    else if (typeof app.emit === 'function') app.emit('delta', delta)
+    if (trends) trends.observe(pathName, power)
   }
   function decodeCurrentPacket (packet) {
     if (!packet) return
@@ -1618,6 +1659,7 @@ module.exports = function (app) {
         log
       })
       trends.start()
+      trendViews = createTrendViews({ dir: configDir, log })
       startBridge()
       switchPane.start(settings, mapping).catch(err => log(`Victron switch pane: ${err.message}`))
 
@@ -1806,6 +1848,24 @@ module.exports = function (app) {
       router.get('/trend/status', (_req, res) => {
         res.json(trends ? trends.status() : { available: false, reason: 'not_started' })
       })
+
+      // Saved trend views (lib/trend-views.js): a view is a named set of values
+      // plus the overlay/stacked and range choices, stored once on the server
+      // so it is the same on every device.
+      router.get('/trend/views', (_req, res) => {
+        res.json({ views: trendViews ? trendViews.list() : [] })
+      })
+      router.post('/trend/views', (req, res) => {
+        if (!trendViews) return res.status(503).json({ ok: false, error: 'not ready' })
+        try { res.json({ ok: true, view: trendViews.save(req.body || {}) }) } catch (err) { res.status(err.status || 400).json({ ok: false, error: err.message }) }
+      })
+      const removeView = (req, res) => {
+        if (!trendViews) return res.status(503).json({ ok: false, error: 'not ready' })
+        try { res.json({ ok: trendViews.remove(req.params.id) }) } catch (err) { res.status(err.status || 500).json({ ok: false, error: err.message }) }
+      }
+      if (typeof router.delete === 'function') router.delete('/trend/views/:id', removeView)
+      // Not every browser/proxy passes DELETE through; a POST does the same.
+      router.post('/trend/views/:id/delete', removeView)
 
       router.get('/circuits', (_req, res) => {
         res.json({

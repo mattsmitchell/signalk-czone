@@ -123,6 +123,9 @@
     .mon-val.stale small { color:#ffb84d; }
     .temp-chip { display:inline-block; margin-left:8px; padding:1px 7px; border-radius:9px; border:1px solid rgba(24,213,232,.35); background:rgba(24,213,232,.08); color:var(--cyan); font:inherit; font-size:11px; font-weight:600; vertical-align:1px; }
     button.temp-chip { cursor:pointer; }
+    .meter-chip { display:inline-block; margin-left:8px; padding:1px 7px; border-radius:9px; border:1px solid rgba(74,222,128,.35); background:rgba(74,222,128,.08); color:#4ade80; font:inherit; font-size:11px; font-weight:600; vertical-align:1px; }
+    button.meter-chip { cursor:pointer; }
+    .meter-chip:empty { display:none; }
     @media (max-width: 600px) {
       .mon-row { padding-left:15px; }
       .mon-row .circuit-name { flex:1 1 0; }
@@ -223,6 +226,36 @@
     .trend-custom input { background:#0c2135; color:var(--text); border:1px solid var(--line); border-radius:9px; padding:7px 9px; color-scheme:dark; }
     .trend-custom button { background:#0c2135; border:1px solid var(--line); color:#cbdbea; border-radius:9px; padding:7px 13px; cursor:pointer; }
     .trend-stats { display:flex; flex-wrap:wrap; gap:0 28px; padding:8px 17px 0; }
+    /* More than one value on the chart: + Add, the picker, the legend. */
+    .trend-add { background:#0c2135; border:1px solid var(--line); color:#cbdbea; border-radius:11px; padding:8px 13px; cursor:pointer; font-size:12px; white-space:nowrap; }
+    .trend-add:hover, .trend-add.active { border-color:#2f86d6; color:#fff; }
+    .trend-add:disabled { opacity:.45; cursor:default; }
+    #trendMode:empty { display:none; }
+    .trend-picker { display:none; margin:10px 15px 0; border:1px solid var(--line); border-radius:12px; background:#0a1c2e; padding:10px; }
+    .trend-picker.show { display:block; }
+    .trend-picker input { width:100%; box-sizing:border-box; background:#0c2135; color:var(--text); border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:13px; }
+    .trend-pick-list { max-height:240px; overflow-y:auto; margin-top:8px; }
+    .trend-pick-group { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:8px 4px 4px; }
+    .trend-pick-list button { display:flex; width:100%; justify-content:space-between; align-items:baseline; background:transparent; border:0; border-radius:8px; color:var(--text); padding:7px 8px; cursor:pointer; text-align:left; font-size:13px; }
+    .trend-pick-list button:hover { background:rgba(55,143,215,.14); }
+    .trend-pick-list button small { color:var(--muted); margin-left:12px; white-space:nowrap; }
+    .trend-gap { flex:1 1 auto; }
+    .trend-save input { width:100%; box-sizing:border-box; background:#0c2135; color:var(--text); border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:13px; }
+    .trend-save-row { display:flex; align-items:center; gap:12px; margin-top:8px; }
+    .trend-save-msg { color:var(--amber); font-size:12px; }
+    .trend-view-row { display:flex; width:100%; justify-content:space-between; align-items:center; gap:10px; }
+    .trend-view-row > button:first-child { flex:1 1 auto; justify-content:flex-start; }
+    .trend-view-row .trend-view-del { flex:0 0 auto; background:transparent; border:0; color:var(--muted); cursor:pointer; font-size:14px; padding:6px 8px; border-radius:7px; }
+    .trend-view-row .trend-view-del:hover { background:rgba(214,96,96,.18); color:#ffd0d0; }
+    .mfd #trendCsvBtn { display:none; }
+    .trend-pick-empty { color:var(--muted); font-size:12px; padding:8px 4px; }
+    .trend-legend { display:inline-flex; align-items:center; gap:8px; margin:6px 18px 0 0; font-size:12px; color:#c6d6e7; }
+    .trend-legend i { width:12px; height:12px; border-radius:3px; flex:none; }
+    .trend-legend b { color:var(--text); font-weight:600; }
+    .trend-legend button { background:transparent; border:0; color:var(--muted); cursor:pointer; padding:2px 4px; font-size:13px; }
+    .trend-legend button:hover { color:#fff; }
+    .trend-tip .tip-row { display:flex; align-items:center; gap:6px; }
+    .trend-tip .tip-row i { width:8px; height:8px; border-radius:2px; flex:none; }
     .trend-chart { position:relative; padding:12px 12px 14px; }
     .trend-chart canvas { width:100%; height:300px; display:block; }
     .trend-tip { position:absolute; pointer-events:none; display:none; background:#0f2237; border:1px solid var(--line); border-radius:9px; padding:6px 9px; font-size:11px; color:var(--text); white-space:nowrap; box-shadow:0 8px 20px rgba(0,0,0,.35); }
@@ -297,6 +330,8 @@
     .no-flexgap .tags > * { margin:0 4px 4px 0; }
     .no-flexgap .trend-controls > *, .no-flexgap .trend-custom > * { margin:0 10px 10px 0; }
     .no-flexgap .trend-stats > * { margin-right:28px; }
+    .no-flexgap .trend-legend > * + * { margin-left:8px; }
+    .no-flexgap .trend-tip .tip-row > * + * { margin-left:6px; }
     .no-flexgap .fullscreen-toggle, .no-flexgap button > .nav-count, .no-flexgap .section-head .search, .no-flexgap .trend-panel .section-head .trend-full { margin-left:auto; }
     @media (max-width: 780px) { .no-flexgap .section-head .sort { margin-left:auto; } }
     /* Chartplotter layout. A Navico plotter (B&G / Simrad / Lowrance)
@@ -410,7 +445,10 @@
       <div class="trend-backdrop" id="trendBackdrop" onclick="closeTrend()"></div>
       <section class="section trend-panel" id="trendPanel" role="dialog" aria-modal="true" aria-labelledby="trendTitle">
         <div class="section-head"><span>📈</span><div><h2 id="trendTitle"></h2><span class="subtle" id="trendSub"></span></div><button type="button" class="sort trend-full" id="trendFull" onclick="toggleTrendFull()" aria-label="Full screen" aria-pressed="false" title="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="trendFullIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><button type="button" class="sort trend-close" onclick="closeTrend()" aria-label="Close trend">✕ Close</button></div>
-        <div class="trend-controls"><div class="trend-seg" id="trendRanges"></div></div>
+        <div class="trend-controls"><div class="trend-seg" id="trendRanges"></div><button type="button" class="trend-add" id="trendAdd" onclick="toggleTrendPicker()" aria-expanded="false">+ Add</button><div class="trend-seg" id="trendMode"></div><span class="trend-gap"></span><button type="button" class="trend-add" id="trendViewsBtn" onclick="toggleTrendViews()" aria-expanded="false">Views</button><button type="button" class="trend-add" id="trendSaveBtn" onclick="toggleTrendSave()">Save view</button><button type="button" class="trend-add" id="trendCsvBtn" onclick="exportTrendCsv()" title="Download the values on the chart as a CSV">⤓ CSV</button></div>
+        <div class="trend-picker" id="trendPicker"><input type="search" id="trendPickSearch" placeholder="Search values to add…" oninput="trendPickerList()" autocomplete="off"><div class="trend-pick-list" id="trendPickList"></div></div>
+        <div class="trend-picker" id="trendViewPanel"><div class="trend-pick-list" id="trendViewList"></div></div>
+        <div class="trend-picker trend-save" id="trendSavePanel"><input type="text" id="trendSaveName" placeholder="Name this view…" maxlength="80" autocomplete="off" onkeydown="if(event.key==='Enter')saveTrendView()"><div class="trend-save-row"><button type="button" class="trend-add" onclick="saveTrendView()">Save view</button><span class="trend-save-msg" id="trendSaveMsg"></span></div></div>
         <div class="trend-custom" id="trendCustom"><label>From <input type="datetime-local" id="trendFrom"></label><label>To <input type="datetime-local" id="trendTo"></label><button type="button" onclick="applyTrendCustom()">Apply</button><span id="trendCustomMsg"></span></div>
         <div class="trend-stats" id="trendStats"></div>
         <div class="trend-chart"><canvas id="trendCanvas"></canvas><div class="trend-tip" id="trendTip"></div><div class="trend-msg" id="trendMsg"></div></div>
@@ -487,7 +525,7 @@
     Lighting:'bulb', Navigation:'compass', Pumps:'drop', 'Bilge Pumps':'drop', Power:'bolt', Entertainment:'music', 'Fans/Ventilation':'fan', Electronics:'chip', Climate:'snow', Refrigeration:'snow',
     Communications:'phone', 'Vessel Critical':'warn', 'Indicators and Alarms':'warn', '24-Hour Circuits':'clock', Accessories:'plus', 'Engine Management':'gear', 'Vessel Management':'gear',
     'Propulsion Management':'fan', 'House/Habitat':'house', Appliances:'appliance', 'Deck Equipment':'anchor',
-    Batteries:'battery', Solar:'sun', Alternators:'gear', Converters:'swap', 'Wind Generators':'fan', 'AC Power':'ac', Tanks:'tank', Temperatures:'temp', Environment:'cloud', 'Circuit current':'bolt', Inputs:'toggle' };
+    Batteries:'battery', Solar:'sun', Alternators:'gear', Converters:'swap', 'Wind Generators':'fan', 'AC Power':'ac', Tanks:'tank', Temperatures:'temp', Environment:'cloud', 'Circuit current':'bolt', 'Circuit power':'bolt', Inputs:'toggle' };
   const mfdIcon = key => `<svg class="ico" viewBox="0 0 24 24">${MFD_ICONS[MFD_ICON_FOR[key]] || MFD_ICONS.dot}</svg>`;
   // The Monitoring tab's data (GET /monitoring/live).
   let monitor = { items: [], temperatures: {}, trendsEnabled: false };
@@ -512,9 +550,35 @@
   const stateOf = c => c.state && c.state.state === 'ON';
   const percentOf = c => c.state && Number.isFinite(c.state.percent) ? c.state.percent : null;
   const currentOf = c => c.state && Number.isFinite(c.state.current) ? c.state.current : null;
+  const powerOf = c => c.state && Number.isFinite(c.state.power) ? c.state.power : null;
   const currentLabel = c => {
     const current = currentOf(c);
     return current != null && current > 0 ? `${current.toFixed(1)} A` : null;
+  };
+  // The ON/OFF button carries the headline electrical figure: watts for a
+  // metered (AC) load, amps for a plain CZone (DC) load — as DC circuits have
+  // always shown.
+  const buttonLabel = c => {
+    const p = powerOf(c);
+    if (p != null && p > 0) return `${Math.round(p)} W`;
+    return currentLabel(c);
+  };
+  // For a metered circuit the button shows watts, so amps sits in a chip beside
+  // the name (like the temperature chip). A plain DC load already shows amps on
+  // the button, so it gets no chip.
+  const ampsChip = c => {
+    const p = powerOf(c), a = currentOf(c);
+    return (p != null && p > 0 && a != null && a > 0) ? `${a.toFixed(1)} A` : '';
+  };
+  // A current/power reading is high-frequency telemetry: patch the button and
+  // the name chip in place instead of rebuilding the whole circuit list.
+  const refreshMeter = c => {
+    const on = stateOf(c);
+    const toggle = document.querySelector(`[data-circuit-slug="${CSS.escape(c.slug)}"]`);
+    const pend = pending.get(nameKey(c));
+    if (toggle && !(pend && pend.kind === 'state')) toggle.textContent = on ? (buttonLabel(c) || 'ON') : 'OFF';
+    const chip = document.querySelector(`[data-meter-slug="${CSS.escape(c.slug)}"]`);
+    if (chip) chip.textContent = (on && ampsChip(c)) || '';
   };
   const categoryData = c => c.categories || { master: [], sub: [], userDefined: [] };
   const isFavorite = c => !hiddenFavorites.has(nameKey(c)) && (favorites.has(nameKey(c)) || (categoryData(c).master || []).includes('Favorites'));
@@ -591,6 +655,17 @@
     return monitor.trendsEnabled
       ? `<button type="button" class="temp-chip" title="${esc(t.name)} trend" onclick="event.stopPropagation();openSeries('${encodeURIComponent(t.path)}','${encodeURIComponent(t.name)}','temperature')">${text}</button>`
       : `<span class="temp-chip" title="${esc(t.name)}">${text}</span>`;
+  }
+  // Amps beside the name for a metered circuit (the button shows its watts),
+  // the way temperature sits there. The element is always emitted (empty =
+  // hidden by CSS) so a high-frequency reading can patch its text in place
+  // without a full re-render.
+  function meterChip(c) {
+    const text = (stateOf(c) && ampsChip(c)) || '';
+    const attr = `class="meter-chip" data-meter-slug="${esc(c.slug)}"`;
+    return status.trendsEnabled === true
+      ? `<button type="button" ${attr} title="${esc(c.name)} current trend" onclick="event.stopPropagation();openCircuitCurrent('${encodeURIComponent(c.slug)}')">${text}</button>`
+      : `<span ${attr}>${text}</span>`;
   }
 
   const MONITOR_GROUPS = ['Batteries','Solar','Alternators','Converters','Wind Generators','DC','AC Power','Tanks','Temperatures','Environment','Inputs'];
@@ -689,14 +764,14 @@
   }
 
   function circuitRow(c) {
-    const on = stateOf(c), pct = percentOf(c), current = currentLabel(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = isFavorite(c);
+    const on = stateOf(c), pct = percentOf(c), dim = !!(c.capabilities && c.capabilities.dimmer), fav = isFavorite(c);
     const p = pending.get(nameKey(c));
     const cats = subCategoryList(c).slice(0,3).map(x => `<span class="tag cat" role="img" tabindex="0" style="--cat:${color(x)}" title="${esc(x)}" aria-label="${esc(x)} category">${icon(x)}</span>`).join('');
     const disabled = p && p.kind === 'state';
-    const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" data-circuit-slug="${esc(c.slug)}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && current ? current : (on?'ON':'OFF'))}</button>`;
+    const toggle = `<button type="button" class="toggle ${on?'on':'off'} ${disabled?'pending':''}" data-circuit-slug="${esc(c.slug)}" ${disabled?'disabled':''} aria-busy="${disabled?'true':'false'}" aria-label="Turn ${on?'off':'on'} ${esc(c.name)}" onclick="toggleCircuit('${encodeURIComponent(c.name)}',${!on})">${disabled?'Sending…':(on && buttonLabel(c) ? buttonLabel(c) : (on?'ON':'OFF'))}</button>`;
     const control = dim ? `<div class="control"><div class="range-wrap"><input aria-label="${esc(c.name)} brightness" type="range" min="1" max="100" value="${Math.max(1,Math.round(pct == null ? 100 : pct))}" oninput="previewPercent(this)" onchange="setLevel('${encodeURIComponent(c.name)}',this.value)"><span class="percent">${pct == null ? '—' : Math.round(pct)+'%'}</span></div>${toggle}</div>` : `<div class="control">${toggle}</div>`;
     const sending = p ? `<span class="sending">Sending…</span>` : '';
-    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}${askMark(c)}${tempChip(c)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div>${status.trendsEnabled === true ? `<button type="button" class="arrow" title="Current trend" aria-label="Current trend for ${esc(c.name)}" onclick="openTrend('${encodeURIComponent(c.slug)}')">›</button>` : '<span class="arrow">›</span>'}</div>`;
+    return `<div class="circuit"><button class="fav ${fav?'on':''}" title="${fav?'Remove from':'Add to'} favorites" onclick="toggleFavorite('${esc(nameKey(c)).replace(/'/g,"\\'")}')">${fav?'★':'☆'}</button><div class="circuit-name"><strong>${esc(c.name)}${askMark(c)}${tempChip(c)}${meterChip(c)}</strong><small>${esc((categoryData(c).master || [])[0] || 'CZone')} · module ${Number(c.module).toString(16).padStart(2,'0').toUpperCase()} / ch ${c.channel}</small></div><div class="tags"><span class="tag">${esc(c.masterCategory || 'CZone')}</span>${cats}</div><div><div class="status ${on?'on':''}"><span class="status-dot"></span>${on?'ON':'OFF'} ${sending}</div>${control}</div>${status.trendsEnabled === true ? `<button type="button" class="arrow" title="Current trend" aria-label="Current trend for ${esc(c.name)}" onclick="openTrend('${encodeURIComponent(c.slug)}')">›</button>` : '<span class="arrow">›</span>'}</div>`;
   }
 
   function previewPercent(el) { const out=el.parentElement.querySelector('.percent'); out.textContent=el.value+'%'; }
@@ -801,24 +876,20 @@
       }
       return false;
     }
-    const m = /^electrical\.czone\.([^\.]+)\.(switch\.(?:state|brightness)|current)$/.exec(path || '');
+    const m = /^electrical\.czone\.([^\.]+)\.(switch\.(?:state|brightness)|current|power)$/.exec(path || '');
     if (!m) return false;
     const c = circuitBySlug(m[1]);
     if (!c) { console.debug('[CZone WS] unmatched circuit path', path, value); return false; }
     c.state = c.state || {};
     const sourceLabel = source && (source.label || source.type || source.src) ? JSON.stringify(source) : 'none';
-    if (m[2] === 'current') {
+    if (m[2] === 'current' || m[2] === 'power') {
       const observed = Number(value);
-      if (!Number.isFinite(observed)) { console.debug('[CZone WS] invalid current', c.name, value); return false; }
-      c.state.current = observed;
-      // Current is high-frequency telemetry. Store every observation, but update
-      // only the existing control instead of rebuilding the whole navigation and
-      // circuit list for every packet.
-      const toggle = document.querySelector(`[data-circuit-slug="${CSS.escape(c.slug)}"]`);
-      const p = pending.get(nameKey(c));
-      if (toggle && !(p && p.kind === 'state')) {
-        toggle.textContent = c.state.state === 'ON' && observed > 0 ? `${observed.toFixed(1)} A` : (c.state.state === 'ON' ? 'ON' : 'OFF');
-      }
+      if (!Number.isFinite(observed)) { console.debug('[CZone WS] invalid ' + m[2], c.name, value); return false; }
+      c.state[m[2]] = observed;
+      // Current/power are high-frequency telemetry. Store every observation, but
+      // patch the button and name chip in place instead of rebuilding the whole
+      // navigation and circuit list for every packet.
+      refreshMeter(c);
       return false;
     }
     if (m[2] === 'switch.state') {
@@ -1142,7 +1213,12 @@
     if (field === 'voltage' && item && item.kind === 'ac') return Object.assign({}, r, { dp:1 });
     return r;
   }
-  const trend = { open:false, series:null, range:'24h', custom:null, customOpen:false, start:0, end:0, data:[], gapMs:0, latest:null, hover:null, geom:null, timer:null, seq:0 };
+  const trend = { open:false, series:null, list:[], picker:false, pickItems:null, mode:'overlay', range:'24h', custom:null, customOpen:false, start:0, end:0, data:[], gapMs:0, latest:null, hover:null, geom:null, timer:null, seq:0, views:[], viewsOpen:false, saveOpen:false };
+  // Up to five values on one chart. The first keeps the usual colour; added
+  // ones take the next of these (no red: red reads as an alarm).
+  const TREND_MAX = 5;
+  const TREND_COLORS = ['217,120,58', '35,170,120', '214,166,30', '214,96,150', '150,138,236'];
+  try { if (localStorage.getItem('czone-trend-mode') === 'stacked') trend.mode = 'stacked'; } catch (e) {}
   const trendEl = id => document.querySelector('#' + id);
   const trendPath = c => `electrical.czone.${c.slug}.current`;
   // datetime-local wants local time as YYYY-MM-DDTHH:MM.
@@ -1151,8 +1227,10 @@
   // A trend is one Signal K path: a circuit's current, or any monitored value.
   function showTrend(series) {
     trend.open = true; trend.series = series; trend.data = []; trend.hover = null;
+    trend.list = [Object.assign({}, series, { rgb: TREND_RGB, data: [], gapMs: 0, latest: null })];
+    trend.picker = false; trend.pickItems = null;
     trendEl('trendTitle').textContent = series.title;
-    trendEl('trendSub').textContent = `${series.r.label} · ${series.path}`;
+    trendSubtitle();
     trendEl('trendPanel').classList.add('show');
     trendEl('trendBackdrop').classList.add('show');
     document.body.classList.add('trend-open');
@@ -1171,10 +1249,19 @@
   };
   window.openTrend = slug => {
     const c = circuitBySlug(decodeURIComponent(slug)); if (!c) return;
+    // A metered circuit (Shelly) leads with power; a plain CZone load, current.
+    const hasPower = c.state && Number.isFinite(c.state.power);
+    showTrend(hasPower
+      ? { path: `electrical.czone.${c.slug}.power`, title: c.name.trim(), r: READING.power }
+      : { path: trendPath(c), title: c.name.trim(), r: READING.current });
+  };
+  // The amps chip opens the current trend (the button/arrow open power).
+  window.openCircuitCurrent = slug => {
+    const c = circuitBySlug(decodeURIComponent(slug)); if (!c) return;
     showTrend({ path: trendPath(c), title: c.name.trim(), r: READING.current });
   };
   window.closeTrend = () => {
-    trend.open = false; clearInterval(trend.timer);
+    trend.open = false; clearInterval(trend.timer); trend.picker = false; trend.viewsOpen = false; trend.saveOpen = false;
     trendEl('trendPanel').classList.remove('show');
     trendEl('trendBackdrop').classList.remove('show');
     document.body.classList.remove('trend-open');
@@ -1200,7 +1287,240 @@
     trendEl('trendRanges').innerHTML = TREND_RANGES.map(([k, label]) => `<button type="button" class="${!customOn && k === trend.range ? 'active' : ''}" onclick="setTrendRange('${k}')">${label}</button>`).join('') +
       `<button type="button" class="${customOn ? 'active' : ''}" onclick="setTrendRange('custom')">Custom</button>`;
     trendEl('trendCustom').classList.toggle('show', customOn);
+    const add = trendEl('trendAdd');
+    add.disabled = trend.list.length >= TREND_MAX;
+    add.title = add.disabled ? `Up to ${TREND_MAX} values on one chart` : 'Add another value to this chart';
+    add.classList.toggle('active', trend.picker);
+    add.setAttribute('aria-expanded', String(trend.picker));
+    trendEl('trendPicker').classList.toggle('show', trend.picker);
+    // Overlay or stacked, once there is more than one unit on the chart.
+    trendEl('trendMode').innerHTML = trendUnits().length > 1
+      ? [['overlay', 'Overlay'], ['stacked', 'Stacked']].map(([k, l]) => `<button type="button" class="${trend.mode === k ? 'active' : ''}" onclick="setTrendMode('${k}')">${l}</button>`).join('')
+      : '';
+    // Saved views, save-this-view, and the CSV download.
+    const vb = trendEl('trendViewsBtn');
+    vb.classList.toggle('active', trend.viewsOpen); vb.setAttribute('aria-expanded', String(trend.viewsOpen));
+    trendEl('trendViewPanel').classList.toggle('show', trend.viewsOpen);
+    const sb = trendEl('trendSaveBtn');
+    const haveData = trend.list.some(s => s.data.length);
+    sb.classList.toggle('active', trend.saveOpen); sb.disabled = !haveData;
+    trendEl('trendSavePanel').classList.toggle('show', trend.saveOpen);
+    trendEl('trendCsvBtn').disabled = !haveData;
   }
+
+  // --- More than one value on a chart ------------------------------------------------
+  const trendKey = s => s.r.onOff ? 'on/off' : (s.r.unit || s.r.label);
+  function trendUnits() { const keys = []; trend.list.forEach(s => { if (keys.indexOf(trendKey(s)) < 0) keys.push(trendKey(s)); }); return keys; }
+  const trendName = s => `${s.title} · ${s.r.label}`;
+  function trendSubtitle() {
+    const s = trend.list[0];
+    trendEl('trendSub').textContent = trend.list.length > 1 ? `${trend.list.length} values` : `${s.r.label} · ${s.path}`;
+  }
+  // A value as shown: ON / OFF for a switch input, else number and unit.
+  function trendValueText(s, v, summarised) {
+    if (s.r.onOff) return summarised ? `on ${Math.round(v * 100)}%` : v >= 0.5 ? 'ON' : 'OFF';
+    return `${v.toFixed(s.r.dp)}${s.r.unit ? ' ' + s.r.unit : ''}`;
+  }
+  window.setTrendMode = mode => {
+    trend.mode = mode === 'stacked' ? 'stacked' : 'overlay';
+    try { localStorage.setItem('czone-trend-mode', trend.mode); } catch (e) {}
+    trendControls(); drawTrend();
+  };
+  window.toggleTrendPicker = () => {
+    if (!trend.picker && trend.list.length >= TREND_MAX) return;
+    trend.picker = !trend.picker;
+    trendControls();
+    if (trend.picker) {
+      trendEl('trendPickSearch').value = '';
+      trendPickerList();
+      // Opened from a circuit, the Monitoring values may not be loaded yet.
+      if (!monitor.items.length && !trend.pickItems) {
+        fetch(`${API}/monitoring/live`, { cache:'no-store', credentials:'include' })
+          .then(r => r.json()).then(d => { trend.pickItems = Array.isArray(d.items) ? d.items : []; if (trend.picker) trendPickerList(); })
+          .catch(() => { trend.pickItems = []; });
+      }
+      try { trendEl('trendPickSearch').focus(); } catch (e) {}
+    }
+  };
+  // Everything that can be trended: monitored values, switch inputs, circuit currents.
+  function trendCandidates() {
+    const out = [];
+    const items = monitor.items.length ? monitor.items : (trend.pickItems || []);
+    for (const item of items) {
+      if (item.kind === 'input') { if (item.path) out.push({ group:'Inputs', path:item.path, title:item.name, r:READING.state }); continue; }
+      for (const r of item.readings || []) {
+        if (r.field === 'capacity' || !r.path) continue;
+        out.push({ group:item.group, path:r.path, title:item.name, r:readingFor(item, r.field) });
+      }
+    }
+    for (const c of circuits) {
+      out.push({ group:'Circuit current', path:trendPath(c), title:c.name.trim(), r:READING.current });
+      if (c.state && Number.isFinite(c.state.power)) out.push({ group:'Circuit power', path:`electrical.czone.${c.slug}.power`, title:c.name.trim(), r:READING.power });
+    }
+    return out;
+  }
+  window.trendPickerList = () => {
+    const q = (trendEl('trendPickSearch').value || '').trim().toLowerCase();
+    const have = trend.list.map(s => s.path);
+    const all = trendCandidates().filter(c => have.indexOf(c.path) < 0 && (!q || `${c.title} ${c.r.label} ${c.group}`.toLowerCase().indexOf(q) >= 0));
+    trend.pickShown = all;
+    const CIRCUIT_GROUPS = ['Circuit current', 'Circuit power'];
+    const groups = MONITOR_GROUPS.concat(CIRCUIT_GROUPS);
+    all.forEach(c => { if (groups.indexOf(c.group) < 0) groups.splice(groups.length - CIRCUIT_GROUPS.length, 0, c.group); });
+    const html = groups.map(g => {
+      const rows = all.map((c, i) => [c, i]).filter(([c]) => c.group === g)
+        .map(([c, i]) => `<button type="button" onclick="addTrendSeries(${i})"><span>${esc(c.title)}</span><small>${esc(c.r.label)}${c.r.unit ? ' · ' + esc(c.r.unit) : ''}</small></button>`).join('');
+      return rows ? `<div class="trend-pick-group">${esc(g)}</div>${rows}` : '';
+    }).join('');
+    trendEl('trendPickList').innerHTML = html || `<div class="trend-pick-empty">${q ? 'Nothing matches.' : 'Nothing else to add.'}</div>`;
+  };
+  window.addTrendSeries = i => {
+    const c = (trend.pickShown || [])[i];
+    if (!c || trend.list.length >= TREND_MAX || trend.list.some(s => s.path === c.path)) return;
+    const used = trend.list.map(s => s.rgb);
+    const rgb = TREND_COLORS.find(x => used.indexOf(x) < 0) || TREND_COLORS[0];
+    trend.list.push({ path:c.path, title:c.title, r:c.r, rgb, data:[], gapMs:0, latest:null });
+    trend.picker = false;
+    trendSubtitle();
+    loadTrend();
+  };
+  window.removeTrendSeries = i => {
+    if (i <= 0 || i >= trend.list.length) return;
+    trend.list.splice(i, 1);
+    trend.hover = null; trendEl('trendTip').style.display = 'none';
+    trendSubtitle(); trendControls(); trendStats(); drawTrend();
+  };
+  // --- Saved views and CSV export ----------------------------------------------
+  // The candidate list may not be loaded yet (the panel can open from a
+  // circuit), so make sure it is before a view resolves its paths.
+  async function ensureTrendCandidates() {
+    if (monitor.items.length || trend.pickItems) return;
+    try {
+      const r = await fetch(`${API}/monitoring/live`, { cache:'no-store', credentials:'include' });
+      const d = await r.json();
+      trend.pickItems = Array.isArray(d.items) ? d.items : [];
+    } catch (e) { trend.pickItems = []; }
+  }
+  async function loadTrendViews() {
+    try {
+      const r = await fetch(`${API}/trend/views`, { cache:'no-store', credentials:'include' });
+      const d = await r.json();
+      trend.views = Array.isArray(d.views) ? d.views : [];
+    } catch (e) { trend.views = []; }
+    renderTrendViews();
+  }
+  function renderTrendViews() {
+    const el = trendEl('trendViewList');
+    if (!trend.views.length) { el.innerHTML = `<div class="trend-pick-empty">No saved views yet. Set up a chart, then “Save view”.</div>`; return; }
+    el.innerHTML = trend.views.map(v => {
+      const n = (v.series || []).length;
+      return `<div class="trend-view-row"><button type="button" onclick="openSavedView('${esc(v.id)}')"><span>${esc(v.name)}</span><small>${n} value${n === 1 ? '' : 's'}${v.mode === 'stacked' ? ' · stacked' : ''}</small></button><button type="button" class="trend-view-del" onclick="deleteTrendView('${esc(v.id)}')" aria-label="Delete ${esc(v.name)}" title="Delete">✕</button></div>`;
+    }).join('');
+  }
+  window.toggleTrendViews = () => {
+    trend.viewsOpen = !trend.viewsOpen;
+    if (trend.viewsOpen) { trend.picker = false; trend.saveOpen = false; renderTrendViews(); loadTrendViews(); }
+    trendControls();
+  };
+  window.toggleTrendSave = () => {
+    if (!trend.list.some(s => s.data.length)) return;
+    trend.saveOpen = !trend.saveOpen;
+    if (trend.saveOpen) { trend.picker = false; trend.viewsOpen = false; }
+    trendControls();
+    if (trend.saveOpen) { const i = trendEl('trendSaveName'); i.value = trend.list.length === 1 ? trendName(trend.list[0]) : ''; trendEl('trendSaveMsg').textContent = ''; try { i.focus(); i.select(); } catch (e) {} }
+  };
+  window.saveTrendView = async () => {
+    const name = (trendEl('trendSaveName').value || '').trim();
+    const msg = trendEl('trendSaveMsg');
+    if (!name) { msg.textContent = 'Enter a name.'; return; }
+    const body = { name, series: trend.list.map(s => ({ path: s.path })), mode: trend.mode, range: trend.range };
+    // A custom range keeps its from/to, so the view reopens on the same period
+    // instead of silently becoming a rolling 24 h.
+    if (trend.range === 'custom' && trend.custom) { body.from = trend.custom.from; body.to = trend.custom.to; }
+    try {
+      const r = await fetch(`${API}/trend/views`, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.error || `Could not save (HTTP ${r.status})`);
+      trend.saveOpen = false; trendControls();
+      await loadTrendViews();
+    } catch (e) { msg.textContent = e.message; }
+  };
+  window.deleteTrendView = async id => {
+    try {
+      const r = await fetch(`${API}/trend/views/${encodeURIComponent(id)}`, { method:'DELETE', credentials:'include' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || `Could not delete (HTTP ${r.status})`);
+    } catch (e) { alert(e.message); }
+    await loadTrendViews();
+  };
+  window.openSavedView = async id => {
+    const v = (trend.views || []).find(x => x.id === id);
+    if (!v) return;
+    await ensureTrendCandidates();
+    const byPath = {}; for (const c of trendCandidates()) byPath[c.path] = c;
+    const resolved = (v.series || []).map(s => byPath[s.path]).filter(Boolean).slice(0, TREND_MAX);
+    if (!resolved.length) { alert('None of this view’s values are available now.'); return; }
+    const used = [];
+    trend.list = resolved.map((c, i) => { const rgb = i === 0 ? TREND_RGB : (TREND_COLORS.find(x => used.indexOf(x) < 0) || TREND_COLORS[0]); used.push(rgb); return { path: c.path, title: c.title, r: c.r, rgb, data: [], gapMs: 0, latest: null }; });
+    trend.open = true; trend.series = trend.list[0]; trend.data = []; trend.hover = null;
+    trend.mode = v.mode === 'stacked' ? 'stacked' : 'overlay';
+    trend.customOpen = false;
+    if (v.range === 'custom' && Number.isFinite(v.from) && Number.isFinite(v.to)) { trend.range = 'custom'; trend.custom = { from: v.from, to: v.to }; }
+    else { trend.range = v.range === 'custom' ? '24h' : (v.range || '24h'); trend.custom = null; }
+    trend.picker = false; trend.viewsOpen = false; trend.saveOpen = false;
+    trendEl('trendTitle').textContent = v.name;
+    trendSubtitle();
+    trendEl('trendPanel').classList.add('show');
+    trendEl('trendBackdrop').classList.add('show');
+    document.body.classList.add('trend-open');
+    loadTrend();
+  };
+  // The values on the chart as a CSV: a time column, then one column per value,
+  // each held at its last reading between its own samples (the line as drawn).
+  function csvCell(s) { s = String(s == null ? '' : s); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  function trendCsv() {
+    const series = trend.list.filter(s => s.data.length);
+    if (!series.length) return '';
+    const times = new Set();
+    series.forEach(s => s.data.forEach(p => times.add(p[0])));
+    const ts = [...times].sort((a, b) => a - b);
+    const header = ['Time', ...series.map(s => `${s.title} (${s.r.onOff ? 'on/off' : s.r.unit || s.r.label})`)];
+    const at = series.map(() => 0);
+    const lines = [header.map(csvCell).join(',')];
+    for (const t of ts) {
+      const cells = [new Date(t).toISOString()];
+      series.forEach((s, si) => {
+        let j = at[si];
+        while (j + 1 < s.data.length && s.data[j + 1][0] <= t) j++;
+        at[si] = j;
+        const p = s.data[j];
+        // Hold the last reading, but not across a gap: once a sample is older
+        // than this series' gap limit, the cell is blank (a module off the bus,
+        // or time past its final sample), so the CSV never invents data.
+        const g = s.gapMs || 16 * 60e3;
+        const v = p && p[0] <= t && (t - p[0]) <= g ? p[1] : null;
+        // dp is 0 for an on/off input, so this gives 0 or 1 for those.
+        cells.push(v === null || v === undefined ? '' : v.toFixed(s.r.dp));
+      });
+      lines.push(cells.map(csvCell).join(','));
+    }
+    return lines.join('\r\n');
+  }
+  window.exportTrendCsv = () => {
+    const csv = trendCsv();
+    if (!csv) return;
+    const title = (trendEl('trendTitle').textContent || 'trend').trim();
+    const name = `${title} ${trend.range} ${new Date().toISOString().slice(0, 10)}`.replace(/[\\/:*?"<>|]+/g, '-');
+    try {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name + '.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { alert('Could not export: ' + e.message); }
+  };
+
   function trendMsg(text) { const m = trendEl('trendMsg'); m.textContent = text; m.classList.toggle('show', !!text); }
 
   async function loadTrend() {
@@ -1210,18 +1530,32 @@
     if (!trend.data.length) { trendMsg('Loading…'); trendStats(); drawTrend(); }
     const custom = trend.range === 'custom' && trend.custom;
     const query = custom ? `from=${trend.custom.from}&to=${trend.custom.to}` : `range=${trend.range}`;
-    let res;
-    try {
-      const r = await fetch(`${API}/trend?path=${encodeURIComponent(trend.series.path)}&${query}`, { cache:'no-store', credentials:'include' });
-      res = await r.json();
-    } catch (e) { res = { available:false, detail:e.message }; }
+    // Every value on the chart, side by side. Each result carries its own
+    // path, so a response is matched to its series by path, not by position:
+    // removing a value mid-load can't then apply one value's data to another,
+    // and a response for a value no longer on the chart is simply ignored.
+    const results = await Promise.all(trend.list.map(async s => {
+      try {
+        const r = await fetch(`${API}/trend?path=${encodeURIComponent(s.path)}&${query}`, { cache:'no-store', credentials:'include' });
+        return { path: s.path, body: await r.json() };
+      } catch (e) { return { path: s.path, body: { available:false, detail:e.message } }; }
+    }));
     if (seq !== trend.seq || !trend.open) return;
+    const byPath = {};
+    results.forEach(x => { byPath[x.path] = x.body; });
     // Kept as [t, value, min, max]; min and max are null for full detail.
     // Converted to display units here, so the chart and figures need not know.
-    const f = trend.series.r.f, fx = v => (v === null || v === undefined ? null : f(v));
-    trend.data = (Array.isArray(res.data) ? res.data : []).map(p => [p[0], f(p[1]), p.length > 2 ? fx(p[2]) : null, p.length > 3 ? fx(p[3]) : null]);
-    trend.gapMs = Number(res.gapMs) || 16 * 60e3;
-    trend.latest = res.latest && Number.isFinite(res.latest.value) ? f(res.latest.value) : null;
+    trend.list.forEach(s => {
+      const r = byPath[s.path] || {};
+      const f = s.r.f, fx = v => (v === null || v === undefined ? null : f(v));
+      s.data = (Array.isArray(r.data) ? r.data : []).map(p => [p[0], f(p[1]), p.length > 2 ? fx(p[2]) : null, p.length > 3 ? fx(p[3]) : null]);
+      s.gapMs = Number(r.gapMs) || 16 * 60e3;
+      s.latest = r.latest && Number.isFinite(r.latest.value) ? f(r.latest.value) : null;
+    });
+    const res = byPath[trend.list[0] && trend.list[0].path] || {};
+    trend.data = trend.list[0].data;
+    trend.gapMs = trend.list[0].gapMs;
+    trend.latest = trend.list[0].latest;
     const now = Date.now();
     trend.end = Number(res.end) || (custom ? trend.custom.to : now);
     trend.start = Number(res.start) || (custom ? trend.custom.from : now - (TREND_RANGE_MS[trend.range] || TREND_RANGE_MS['24h']));
@@ -1229,7 +1563,7 @@
     trend.hover = null;
     trendEl('trendTip').style.display = 'none';
     if (res.available === false || res.error) trendMsg(res.detail || 'Trends are not available.');
-    else if (!trend.data.length) trendMsg(custom ? 'Nothing was recorded in this period.' : 'No samples in this range yet.');
+    else if (!trend.list.some(s => s.data.length)) trendMsg(custom ? 'Nothing was recorded in this period.' : 'No samples in this range yet.');
     else trendMsg('');
     trendControls(); trendStats(); drawTrend();
     clearInterval(trend.timer);
@@ -1238,9 +1572,23 @@
 
   const trendLow = p => p[2] === null ? p[1] : p[2];
   const trendHigh = p => p[3] === null ? p[1] : p[3];
+  // The value to plot as the line. An on/off input uses the bucket's max, not
+  // its time-average: on a summarised (multi-day) range a brief open then draws
+  // fully to ON instead of a short spike at its duty cycle. Raw samples are
+  // unaffected (max of a raw point is the point). The duty cycle stays in the
+  // "Time on" tile and the tooltip.
+  const trendPlot = (s, p) => s.r.onOff ? trendHigh(p) : p[1];
 
   function trendStats() {
     const d = trend.data, el = trendEl('trendStats');
+    if (trend.list.length > 1) {
+      // A legend: each value's colour, name and latest reading; added ones can be removed.
+      el.innerHTML = trend.list.map((s, i) => {
+        const last = s.latest !== null && trend.range !== 'custom' ? s.latest : s.data.length ? s.data[s.data.length - 1][1] : null;
+        return `<span class="trend-legend"><i style="background:rgb(${s.rgb})"></i><span>${esc(trendName(s))}</span><b>${last === null ? '—' : esc(trendValueText(s, last, false))}</b>${i ? `<button type="button" onclick="removeTrendSeries(${i})" aria-label="Remove ${esc(trendName(s))}" title="Remove">✕</button>` : ''}</span>`;
+      }).join('');
+      return;
+    }
     if (!d.length) { el.innerHTML = ''; return; }
     // Samples are stored on change, so they are not evenly spaced: the average
     // is taken over time (and not across gaps), not over the number of rows.
@@ -1289,7 +1637,9 @@
   }
 
   function drawTrend() {
+    if (trend.list.length > 1) { drawTrendMulti(); return; }
     const canvas = trendEl('trendCanvas');
+    canvas.style.height = '';
     trend.geom = null;
     const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
     canvas.width = W * dpr; canvas.height = H * dpr;
@@ -1351,7 +1701,7 @@
         for (let i = g.length - 1; i >= 0; i--) ctx.lineTo(X(g[i][0]), Y(trendLow(g[i])));
         ctx.fillStyle = `rgba(${TREND_RGB},.20)`;
       } else {
-        g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+        g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(trendPlot(trend.series, p))) : ctx.moveTo(X(p[0]), Y(trendPlot(trend.series, p))));
         ctx.lineTo(X(g[g.length - 1][0]), base); ctx.lineTo(X(g[0][0]), base);
         const grad = ctx.createLinearGradient(0, pad.t, 0, base);
         grad.addColorStop(0, `rgba(${TREND_RGB},.22)`); grad.addColorStop(1, `rgba(${TREND_RGB},0)`);
@@ -1359,7 +1709,7 @@
       }
       ctx.closePath(); ctx.fill();
       ctx.beginPath();
-      g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+      g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(trendPlot(trend.series, p))) : ctx.moveTo(X(p[0]), Y(trendPlot(trend.series, p))));
       ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
     }
     ctx.restore();
@@ -1370,12 +1720,146 @@
       ctx.strokeStyle = 'rgba(237,246,255,.35)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, base); ctx.stroke();
       ctx.fillStyle = color; ctx.strokeStyle = '#0b1a2b'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(X(p[0]), Y(trendPlot(trend.series, p)), 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
+  }
+
+  // Several values on one chart. Each unit has its own scale: overlaid, the
+  // first unit's scale is on the left and the second's on the right; stacked,
+  // each unit has its own band with its own scale.
+  function trendScale(series, count) {
+    const onOff = series.every(s => s.r.onOff);
+    const rows = [].concat.apply([], series.map(s => s.data));
+    if (!rows.length) return null;
+    const lows = rows.map(trendLow), highs = rows.map(trendHigh);
+    const zero = series.some(s => s.r.zero);
+    const y = onOff ? { lo: -0.15, hi: 1.15, ticks: [0, 1], step: 1 } : trendTicks(zero ? Math.min(0, ...lows) : Math.min(...lows), Math.max(...highs), count);
+    let dp = Math.max(0, -Math.floor(Math.log10(y.step) + 1e-9));
+    if (y.ticks.some(t => Math.abs(t * Math.pow(10, dp) - Math.round(t * Math.pow(10, dp))) > 1e-6)) dp++;
+    return Object.assign(y, { label: t => onOff ? (t ? 'ON' : 'OFF') : t.toFixed(dp), unit: onOff ? '' : series[0].r.unit });
+  }
+  function drawTrendMulti() {
+    const canvas = trendEl('trendCanvas');
+    trend.geom = null;
+    // Stacked bands need room: a taller chart for three or more (full screen and a phone have their own height).
+    const bands = trend.mode === 'stacked' ? trendUnits().length : 1;
+    canvas.style.height = bands > 2 && !trendEl('trendPanel').classList.contains('full') && window.innerWidth > 760 ? `${Math.min(560, 110 * bands)}px` : '';
+    const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    if (!W || !trend.list.some(s => s.data.length)) return;
+    ctx.font = '11px Inter, system-ui, sans-serif';
+    const keys = trendUnits();
+    const stacked = trend.mode === 'stacked' && keys.length > 1;
+    const groups = keys.map(k => { const series = trend.list.filter(s => trendKey(s) === k); return { key: k, series, y: trendScale(series, stacked ? 3 : 5) }; });
+    const labelW = g => g.y ? Math.max(...g.y.ticks.map(t => ctx.measureText(g.y.label(t)).width), ctx.measureText(g.y.unit).width) + 14 : 20;
+    const left = stacked ? Math.max(...groups.map(labelW)) : labelW(groups[0]);
+    const right = !stacked && groups.length > 1 ? labelW(groups[1]) : 12;
+    const pad = { l: left, r: right, t: 14, b: 26 };
+    const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b, t0 = trend.start, t1 = trend.end;
+    const X = t => pad.l + ((t - t0) / (t1 - t0)) * pw;
+    // Where each group is drawn: the whole height overlaid, its own band stacked.
+    const bandGap = 14;
+    groups.forEach((g, i) => {
+      const n = stacked ? groups.length : 1;
+      const h = (ph - bandGap * (n - 1)) / n;
+      g.top = pad.t + (stacked ? i * (h + bandGap) : 0); g.h = h;
+      g.Y = v => g.top + (1 - (v - g.y.lo) / (g.y.hi - g.y.lo)) * g.h;
+    });
+
+    // Grid, scales and unit names, kept quiet; a scale takes its first value's colour when overlaid.
+    ctx.lineWidth = 1; ctx.textBaseline = 'middle';
+    groups.forEach((g, i) => {
+      if (!g.y) return;
+      const onRight = !stacked && i === 1;
+      if (!stacked && i > 1) return; // a third unit and more: no scale of its own (the legend and tooltip say)
+      const tint = stacked ? '#8fa7be' : `rgb(${g.series[0].rgb})`;
+      for (const t of g.y.ticks) {
+        const yy = Math.round(g.Y(t)) + 0.5;
+        if (stacked || i === 0) { ctx.strokeStyle = 'rgba(148,193,235,.10)'; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke(); }
+        ctx.fillStyle = tint; ctx.textAlign = onRight ? 'left' : 'right';
+        ctx.fillText(g.y.label(t), onRight ? W - pad.r + 8 : pad.l - 8, yy);
+      }
+      // The unit: above its scale when overlaid; inside the band's top left corner, in the value's colour, when stacked.
+      if (stacked) { ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = `rgb(${g.series[0].rgb})`; ctx.fillText(g.series.map(s => s.title).join(', ') + (g.y.unit ? ` (${g.y.unit})` : ''), pad.l + 6, g.top + 1); ctx.textBaseline = 'middle'; }
+      else if (g.y.unit) { ctx.textAlign = onRight ? 'left' : 'right'; ctx.fillStyle = tint; ctx.textBaseline = 'top'; ctx.fillText(g.y.unit, onRight ? W - pad.r + 8 : pad.l - 8, Math.max(0, g.top - 13)); ctx.textBaseline = 'middle'; }
+      if (stacked && i > 0) { ctx.strokeStyle = 'rgba(148,193,235,.22)'; const yy = Math.round(g.top - bandGap / 2) + 0.5; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke(); }
+    });
+    ctx.fillStyle = '#8fa7be'; ctx.textBaseline = 'top';
+    const n = Math.max(2, Math.min(7, Math.floor(pw / 110)));
+    for (let i = 0; i <= n; i++) {
+      const t = t0 + (i / n) * (t1 - t0);
+      ctx.textAlign = i === 0 ? 'left' : i === n ? 'right' : 'center';
+      ctx.fillText(trendTimeLabel(t, t1 - t0), X(t), H - pad.b + 8);
+    }
+
+    // Each value: its band (summaries) and its line, broken where samples are missing.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(pad.l, 0, pw, H); ctx.clip();
+    const yOf = new Map();
+    groups.forEach(g => g.series.forEach(s => yOf.set(s, g.Y)));
+    trend.list.forEach(s => {
+      const d = s.data, Y = yOf.get(s);
+      if (!d.length || !Y) return;
+      const segments = []; let seg = [d[0]];
+      for (let i = 1; i < d.length; i++) { if (d[i][0] - d[i - 1][0] > s.gapMs) { segments.push(seg); seg = []; } seg.push(d[i]); }
+      segments.push(seg);
+      for (const g of segments) {
+        if (g.length === 1) { ctx.fillStyle = `rgb(${s.rgb})`; ctx.beginPath(); ctx.arc(X(g[0][0]), Y(g[0][1]), 2.5, 0, Math.PI * 2); ctx.fill(); continue; }
+        if (g.some(p => p[2] !== null && p[3] !== p[2])) {
+          ctx.beginPath();
+          g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(trendHigh(p))) : ctx.moveTo(X(p[0]), Y(trendHigh(p))));
+          for (let i = g.length - 1; i >= 0; i--) ctx.lineTo(X(g[i][0]), Y(trendLow(g[i])));
+          ctx.closePath(); ctx.fillStyle = `rgba(${s.rgb},.16)`; ctx.fill();
+        }
+        ctx.beginPath();
+        g.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(trendPlot(s, p))) : ctx.moveTo(X(p[0]), Y(trendPlot(s, p))));
+        ctx.strokeStyle = `rgb(${s.rgb})`; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+      }
+    });
+    ctx.restore();
+
+    trend.geom = { X, pad, pw, W, t0, t1, yOf, top: pad.t, base: pad.t + ph };
+    if (trend.hover && trend.hover.multi) {
+      const x = Math.round(X(trend.hover.t)) + 0.5;
+      ctx.strokeStyle = 'rgba(237,246,255,.35)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t + ph); ctx.stroke();
+      for (const h of trend.hover.points) {
+        const Y = yOf.get(h.s); if (!Y) continue;
+        ctx.fillStyle = `rgb(${h.s.rgb})`; ctx.strokeStyle = '#0b1a2b'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(X(h.p[0]), Y(trendPlot(h.s, h.p)), 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    }
+  }
+  // The crosshair: every value's nearest sample to that moment (none where it has a gap).
+  function trendHoverMulti(px) {
+    const tip = trendEl('trendTip'), g = trend.geom;
+    if (!g) { tip.style.display = 'none'; return; }
+    const t = g.t0 + ((px - g.pad.l) / g.pw) * (g.t1 - g.t0);
+    const points = [];
+    for (const s of trend.list) {
+      const d = s.data; if (!d.length) continue;
+      let lo = 0, hi = d.length - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (d[mid][0] < t) lo = mid; else hi = mid; }
+      const p = Math.abs(d[lo][0] - t) <= Math.abs(d[hi][0] - t) ? d[lo] : d[hi];
+      if (Math.abs(p[0] - t) <= s.gapMs) points.push({ s, p });
+    }
+    if (!points.length) { trendHoverEnd(); return; }
+    trend.hover = { multi: true, t: points[0].p[0], points };
+    drawTrendMulti();
+    const when = new Date(trend.hover.t).toLocaleString([], Object.assign({ weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }, g.t1 - g.t0 > 300 * 86400e3 ? { year:'numeric' } : {}));
+    tip.innerHTML = points.map(h => `<span class="tip-row"><i style="background:rgb(${h.s.rgb})"></i>${esc(h.s.title)} <b>${esc(trendValueText(h.s, h.p[1], h.p[2] !== null && h.p[3] !== h.p[2]))}</b></span>`).join('') + `<small>${esc(when)}</small>`;
+    tip.style.display = 'block';
+    const x = g.X(trend.hover.t), tw = tip.offsetWidth;
+    tip.style.left = `${Math.max(8, x + 14 + tw > g.W - 8 ? x - 14 - tw : x + 14) + 12}px`;
+    tip.style.top = `${g.top + 4}px`;
   }
 
   // The crosshair snaps to the nearest sample.
   function trendHover(px) {
+    if (trend.list.length > 1) { trendHoverMulti(px); return; }
     const tip = trendEl('trendTip'), g = trend.geom, d = trend.data;
     if (!g || !d.length) { tip.style.display = 'none'; return; }
     const t = g.t0 + ((px - g.pad.l) / g.pw) * (g.t1 - g.t0);
@@ -1405,6 +1889,13 @@
   // the capture phase sees the dialog before the dialog's own handler removes it.
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && trend.open && !document.querySelector('[role="alertdialog"]')) window.closeTrend(); }, true);
   window.addEventListener('resize', () => { if (trend.open) drawTrend(); });
+  // Browsers throttle (or pause) the 60 s auto-refresh timer while the tab is
+  // hidden, so an open trend can be stale when you come back to it. Refetch at
+  // once when the tab becomes visible or regains focus. The data the server
+  // returns is already live (it includes the in-memory buffer), so this just
+  // asks for it — no change to recording and no extra writes on the GX.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && trend.open) loadTrend(); });
+  window.addEventListener('focus', () => { if (trend.open) loadTrend(); });
 
   function renderModes() {
     const el = document.querySelector('#modes');
@@ -1592,6 +2083,7 @@
     for (const c of circuits) {
       subscribe.push({ path: `electrical.czone.${c.slug}.switch.state`, policy: 'instant' });
       subscribe.push({ path: `electrical.czone.${c.slug}.current`, policy: 'instant' });
+      subscribe.push({ path: `electrical.czone.${c.slug}.power`, policy: 'instant' });
       if (c.capabilities && c.capabilities.dimmer) subscribe.push({ path: `electrical.czone.${c.slug}.switch.brightness`, policy: 'instant' });
     }
     console.debug('[CZone WS] subscribing to', subscribe.length, 'exact circuit paths');
