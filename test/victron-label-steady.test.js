@@ -10,7 +10,15 @@ const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { createVictronSwitches } = require('../lib/victron/switches')
+const { createVictronSwitches, labelWith } = require('../lib/victron/switches')
+
+// A metered circuit (its load measured by a Shelly) leads the pane label with
+// power; a plain CZone load shows current. gui-v2 does not render the dbus
+// /Current field, so the plugin composes the value into the name itself.
+assert.strictEqual(labelWith('HWC', null, 3.1, 'C'), 'HWC (3.1 A)')
+assert.strictEqual(labelWith('HWC', null, 3.1, 'C', 688.2), 'HWC (688 W)', 'watts preferred over amps when metered')
+assert.strictEqual(labelWith('HWC', null, null, 'C', 688.2), 'HWC (688 W)')
+assert.strictEqual(labelWith('Fridge', 273.15 - 4.3, null, 'C', 120.6), 'Fridge (-4.3 °C, 121 W)', 'temperature then power')
 
 const objects = {}
 const bus = {
@@ -31,8 +39,12 @@ let amps = 1.9
 let celsius = -4.3
 let clock = 1e12
 const K = c => c + 273.15
+let watts = null
+let volts = null
 const sw = createVictronSwitches(app, {
   getCurrent: p => (p === 'electrical.czone.Light_2.current' ? amps : null),
+  getPower: p => (p === 'electrical.czone.Light_2.power' ? watts : null),
+  getVoltage: slug => (slug === 'Light_2' ? volts : null),
   getTemperature: slug => (slug === 'Light_2' ? K(celsius) : null),
   now: () => clock,
   version: 'test'
@@ -78,6 +90,14 @@ sw.start({ victronSwitches: true }, path.join(__dirname, 'fixtures', 'TestBench.
   read(2.1, -3.7); assert.strictEqual(name(), 'Light 2 (-3.7 °C, 2.1 A)')
   read(2.1, -3.5); read(2.1, -3.5, 290); assert.strictEqual(name(), 'Light 2 (-3.7 °C, 2.1 A)')
   read(2.1, -3.5, 20); assert.strictEqual(name(), 'Light 2 (-3.5 °C, 2.1 A)')
+
+  // Metering: an AC load (its Shelly reads mains voltage) is labelled in watts,
+  // not amps; a DC load (bank voltage) stays in amps. Light_2 is on at -3.5 °C.
+  watts = 688.2; volts = 229.4; read(2.1, -3.5)
+  assert.strictEqual(name(), 'Light 2 (-3.5 °C, 688 W)', 'AC load: watts, not amps')
+  volts = 27.4; read(2.1, -3.5) // a DC bank voltage instead
+  assert.strictEqual(name(), 'Light 2 (-3.5 °C, 2.1 A)', 'DC load: amps, not watts')
+  watts = null; volts = null
 
   sw.stop()
   console.log('Switch label steadiness tests passed')

@@ -281,14 +281,14 @@ function rig ({ device = false, circuit = false, sending = true } = {}) {
   ])
 
   // --- Shelly driver, against a stand-in answering as the bench PM1 did.
-  const shelly = { output: true, sets: [], password: false }
+  const shelly = { output: true, sets: [], password: false, apower: 0.0, voltage: 239.1, current: 0.0 }
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x')
     if (shelly.password) { res.statusCode = 401; return res.end('{}') }
     if (u.pathname === '/rpc/Switch.GetStatus') {
       if (u.searchParams.get('id') !== '0') { res.statusCode = 500; return res.end('{"code":-105}') }
       res.setHeader('content-type', 'application/json')
-      return res.end(JSON.stringify({ id: 0, source: 'WS_in', output: shelly.output, apower: 0.0, voltage: 239.1, current: 0.0 }))
+      return res.end(JSON.stringify({ id: 0, source: 'WS_in', output: shelly.output, apower: shelly.apower, voltage: shelly.voltage, current: shelly.current }))
     }
     if (u.pathname === '/rpc/Switch.Set') {
       shelly.output = u.searchParams.get('on') === 'true'
@@ -310,6 +310,38 @@ function rig ({ device = false, circuit = false, sending = true } = {}) {
     await assert.rejects(d.read({ host, channel: 0 }), /password/)
     shelly.password = false
     await assert.rejects(createShellyDriver({ timeoutMs: 300 }).read({ host: '127.0.0.1:1', channel: 0 }), /ECONNREFUSED|no answer/)
+  }
+
+  // --- Shelly meter(): one GetStatus gives on/off plus the Shelly's own
+  //     power (W) / current (A) / voltage (V); the bridge polls this so the
+  //     telemetry is free with the state poll it already does.
+  {
+    const d = createShellyDriver()
+    shelly.output = true; shelly.apower = 688.2; shelly.current = 3.01; shelly.voltage = 229.4
+    assert.deepStrictEqual(await d.meter({ host, channel: 0 }), { on: true, power: 688.2, current: 3.01, voltage: 229.4 })
+    // A non-metering Shelly omits these: come back as null, never NaN.
+    shelly.apower = undefined; shelly.current = undefined; shelly.voltage = undefined
+    assert.deepStrictEqual(await d.meter({ host, channel: 0 }), { on: true, power: null, current: null, voltage: null })
+    shelly.apower = 0.0; shelly.current = 0.0; shelly.voltage = 239.1
+  }
+
+  // --- The bridge calls meter() when the driver has one and hands the telemetry
+  //     to onMeter each poll (and still tracks on/off from m.on).
+  {
+    const seen = []
+    const meterDriver = { describe: () => 's', meter: async () => ({ on: true, power: 500, current: 2.2, voltage: 230 }) }
+    const b = createBridge({
+      readCircuit: () => true,
+      drivers: { m: meterDriver },
+      onMeter: (name, m) => seen.push([name, m]),
+      now: () => 1000,
+      pollMs: 1e9
+    })
+    b.start([{ circuit: 'HWC', target: 'm' }])
+    await b.poll(); await tick()
+    assert.deepStrictEqual(seen, [['HWC', { on: true, power: 500, current: 2.2, voltage: 230 }]])
+    assert.strictEqual(b.status()[0].device, true, 'on/off still tracked from the meter reading')
+    b.stop()
   }
 
   // --- Victron driver, against a stand-in D-Bus with the PM1 as the bench showed it.
